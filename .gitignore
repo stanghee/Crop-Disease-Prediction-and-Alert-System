@@ -1,0 +1,34 @@
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+__MACOSX/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+
+# Cartelle virtual environment
+venv/
+env/
+.venv/
+.env/
+
+# File di configurazione con variabili segrete
+.env
+.env.*
+
+# Log e file temporanei
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
