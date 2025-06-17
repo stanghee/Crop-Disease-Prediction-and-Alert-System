@@ -23,23 +23,62 @@ services:
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
-  producer:
-    build: ./producer
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
     volumes:
-      - ./producer:/app
+      - minio-data:/data
+
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: weatherdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  satellite-producer:
+    build: ./producer/Satellite
+    volumes:
+      - ./producer/Satellite:/app
     working_dir: /app
-    command: sh -c "sleep 10 && python producer.py"
     depends_on:
       - kafka
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    command: ["/entrypoint.sh"]
 
-  consumer:
-    build: ./consumer
+  weather-producer:
+    build: ./producer/Weather
     volumes:
-      - ./consumer:/app
+      - ./producer/Weather:/app
     working_dir: /app
-    command: sh -c "sleep 10 && python consumer.py"
+    depends_on:
+      - kafka
+    environment:
+      API_KEY: ${API_KEY}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DEFAULT_LOCATION: ${DEFAULT_LOCATION}
+    command: ["/entrypoint.sh"]
+
+  satellite-consumer:
+    build: ./consumer/Satellite
+    volumes:
+      - ./consumer/Satellite:/app
+    working_dir: /app
     depends_on:
       - kafka
       - minio
@@ -49,18 +88,24 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: satellite-images
+    command: ["sh", "-c", "sleep 10 && python consumer.py"]
 
-  minio:
-    image: minio/minio
-    ports:
-      - "9000:9000"  # API
-      - "9001:9001"  # Console
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    command: server /data --console-address ":9001"
+  weather-consumer:
+    build: ./consumer/Weather
     volumes:
-      - minio-data:/data
+      - ./consumer/Weather:/app
+    working_dir: /app
+    depends_on:
+      - kafka
+      - postgres
+    environment:
+      KAFKA_SERVER: kafka:9092
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: weatherdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    command: ["/entrypoint.sh"]
 
 volumes:
   minio-data:
+  pgdata:

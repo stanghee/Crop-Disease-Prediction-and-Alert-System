@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === Caricamento variabili d’ambiente ===
+# === Caricamento variabili d'ambiente ===
 load_dotenv()
 
 KAFKA_SERVER = os.getenv("KAFKA_SERVER", "kafka:9092")

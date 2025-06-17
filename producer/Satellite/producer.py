@@ -11,8 +11,8 @@ from kafka import KafkaProducer
 from PIL import Image
 
 # === CONFIG ===
-client_id = 'sh-00de3a55-400a-4b8d-b251-54889eb69cc8'
-client_secret = 'XnvG3JemZDrARJlyFUFoWCUFY7WrE6Gx'
+client_id = os.getenv('COPERNICUS_CLIENT_ID', 'sh-00de3a55-400a-4b8d-b251-54889eb69cc8') #OPPURE INSERISCI IL TUO CLIENT ID 
+client_secret = os.getenv('COPERNICUS_CLIENT_SECRET', 'XnvG3JemZDrARJlyFUFoWCUFY7WrE6Gx') #OPPURE INSERISCI IL TUO CLIENT SECRET
 kafka_topic = 'satellite-data'
 kafka_server = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 bbox = [10.894444, 45.266667, 10.909444, 45.281667]
@@ -118,10 +118,10 @@ def fetch_and_send():
 # === ESEGUI SUBITO ===
 fetch_and_send()
 
-# === OGNI 30 MINUTI ===
+# === OGNI MINUTO ===
 schedule.every(1).minutes.do(fetch_and_send)
 
-print("⏱ In ascolto ogni 30 minuti...", flush=True)
+print("⏱ In ascolto ogni minuto...", flush=True)
 while True:
     schedule.run_pending()
     time.sleep(1)
