@@ -7,6 +7,10 @@ from kafka import KafkaConsumer
 from kafka.errors import NoBrokersAvailable
 from dotenv import load_dotenv
 import socket
+from datetime import datetime
+from zoneinfo import ZoneInfo
+import uuid
+
 consumer_id = socket.gethostname()
 
 # === Configurazione logging ===
@@ -27,6 +31,7 @@ POSTGRES_DB = os.getenv("POSTGRES_DB", "weatherdb")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 SENTRY_DSN = os.getenv("SENTRY_DSN")
+TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")  # Default a Roma se non specificato
 
 # === Inizializzazione Sentry se configurato ===
 if SENTRY_DSN:
@@ -46,42 +51,39 @@ if not POSTGRES_PASSWORD:
     logger.error("❌ POSTGRES_PASSWORD non definito!")
     exit(1)
 
-# === Connessione a PostgreSQL con retry ===
-max_retries = 10
-retry_delay = 5  # secondi
+def connect_to_db(retries=10, delay=5):
+    for attempt in range(retries):
+        try:
+            logger.info(f"🔄 Connessione al database PostgreSQL ({attempt + 1}/{retries})...")
+            conn = psycopg2.connect(
+                host=POSTGRES_HOST,
+                database=POSTGRES_DB,
+                user=POSTGRES_USER,
+                password=POSTGRES_PASSWORD,
+                options=f"-c timezone={TIMEZONE}"
+            )
+            logger.info("✅ Connessione a PostgreSQL riuscita.")
+            return conn
+        except psycopg2.Error as e:
+            if attempt == retries - 1:
+                logger.error(f"❌ Impossibile connettersi al database dopo {retries} tentativi: {e}")
+                raise
+            logger.warning(f"⚠️ Tentativo {attempt + 1} fallito: {e}")
+            time.sleep(delay)
 
-conn = None
-for attempt in range(max_retries):
-    try:
-        logger.info(f"🔄 Connessione al database PostgreSQL ({attempt+1}/{max_retries})...")
-        conn = psycopg2.connect(
-            host=POSTGRES_HOST,
-            database=POSTGRES_DB,
-            user=POSTGRES_USER,
-            password=POSTGRES_PASSWORD
-        )
-        logger.info("✅ Connessione a PostgreSQL riuscita.")
-        break
-    except Exception as e:
-        logger.warning(f"⚠️ Connessione fallita: {e}")
-        capture_exception(e)
-        time.sleep(retry_delay)
-else:
-    logger.error("❌ Errore: impossibile connettersi a PostgreSQL dopo vari tentativi.")
-    exit(1)
-
+conn = connect_to_db()
 cursor = conn.cursor()
 
 # === Creazione tabella se non esiste ===
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS weather_data (
         id SERIAL PRIMARY KEY,
+        timestamp TIMESTAMP WITH TIME ZONE,
         location TEXT,
         region TEXT,
         country TEXT,
         lat REAL,
         lon REAL,
-        local_time TEXT,
         temp_c REAL,
         humidity INT,
         wind_kph REAL,
@@ -93,9 +95,9 @@ conn.commit()
 
 # === Connessione a Kafka con retry ===
 consumer = None
-for attempt in range(max_retries):
+for attempt in range(10):
     try:
-        logger.info(f"🔄 Tentativo di connessione a Kafka ({attempt+1}/{max_retries})...")
+        logger.info(f"🔄 Tentativo di connessione a Kafka ({attempt+1}/10)...")
         consumer = KafkaConsumer(
             TOPIC,
             bootstrap_servers=KAFKA_SERVER,
@@ -109,7 +111,7 @@ for attempt in range(max_retries):
     except NoBrokersAvailable as e:
         logger.warning("⚠️ Kafka non disponibile, nuovo tentativo tra 5 secondi...")
         capture_exception(e)
-        time.sleep(retry_delay)
+        time.sleep(5)
 else:
     logger.error("❌ Errore: impossibile connettersi a Kafka dopo vari tentativi.")
     exit(1)
@@ -124,8 +126,8 @@ for message in consumer:
         data = message.value
         logger.info(f"📨 [{consumer_id}] Ricevuto: {data}")
 
-        required_keys = {'location', 'region', 'country', 'lat', 'lon',
-                         'local_time', 'temp_c', 'humidity', 'wind_kph', 'condition', 'uv'}
+        required_keys = {'timestamp', 'location', 'region', 'country', 'lat', 'lon',
+                         'temp_c', 'humidity', 'wind_kph', 'condition', 'uv'}
 
         if not required_keys.issubset(data):
             logger.warning(f"⚠️ Dato incompleto o malformato: {data}")
@@ -153,16 +155,24 @@ for message in consumer:
         # Reset counter on valid message
         invalid_counter = 0
 
+        # === Parse timestamp with timezone ===
+        timestamp = datetime.fromisoformat(data['timestamp'])
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=ZoneInfo(TIMEZONE))
+
         # === Insert into DB ===
         cursor.execute('''
             INSERT INTO weather_data (
-                location, region, country, lat, lon, local_time,
+                timestamp, location, region, country, lat, lon,
                 temp_c, humidity, wind_kph, condition, uv
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (
+                (CAST(%s AS timestamptz) AT TIME ZONE 'UTC' AT TIME ZONE %s),
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
         ''', (
+            timestamp.isoformat(), TIMEZONE,
             data['location'], data['region'], data['country'],
-            data['lat'], data['lon'], data['local_time'],
-            data['temp_c'], data['humidity'], data['wind_kph'],
+            data['lat'], data['lon'], data['temp_c'], data['humidity'], data['wind_kph'],
             data['condition'], data['uv']
         ))
         conn.commit()

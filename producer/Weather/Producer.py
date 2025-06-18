@@ -8,6 +8,8 @@ import requests
 from kafka import KafkaProducer
 from dotenv import load_dotenv
 import sys
+import psycopg2
+from zoneinfo import ZoneInfo
 
 # === Caricamento variabili ambiente ===
 load_dotenv()
@@ -17,6 +19,13 @@ API_URL = "https://api.weatherapi.com/v1/current.json"
 DEFAULT_LOCATION = os.getenv("DEFAULT_LOCATION", "Verona")
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
+TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")  # Default a Roma se non specificato
+
+# Configurazione DB
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "sensordb")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 
 # === Inizializzazione Sentry (se configurato) ===
 SENTRY_ENABLED = False
@@ -33,13 +42,13 @@ if SENTRY_DSN:
         SENTRY_ENABLED = False
 
 # Logging setup
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler()
-handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logger.addHandler(handler)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+logger = logging.getLogger(__name__)
 
-logger.info("🚀 Weather producer starting up...")
+logger.info(f"🚀 Weather producer starting up with timezone {TIMEZONE}...")
 
 # === Check API_KEY ===
 if not API_KEY:
@@ -84,6 +93,9 @@ def fetch_weather_data(location):
 
 def validate_and_prepare_data(data):
     try:
+        # Usiamo il timestamp corrente con il fuso orario locale
+        current_timestamp = datetime.now(ZoneInfo(TIMEZONE)).isoformat()
+        
         loc = data.get('location', {})
         curr = data.get('current', {})
 
@@ -99,7 +111,6 @@ def validate_and_prepare_data(data):
         country = loc.get('country') or last_valid_data['country']
         lat = loc.get('lat') or last_valid_data['lat']
         lon = loc.get('lon') or last_valid_data['lon']
-        local_time = loc.get('localtime') or datetime.utcnow().isoformat()
 
         temp_c = curr.get('temp_c')
         if temp_c is None or not (-50 <= temp_c <= 60):
@@ -115,12 +126,12 @@ def validate_and_prepare_data(data):
 
         return {
             "message_id": str(uuid.uuid4()),
+            "timestamp": current_timestamp,
             "location": location,
             "region": region,
             "country": country,
             "lat": lat,
             "lon": lon,
-            "local_time": local_time,
             "temp_c": temp_c,
             "humidity": humidity,
             "wind_kph": wind_kph,
@@ -134,12 +145,30 @@ def validate_and_prepare_data(data):
             sentry_sdk.capture_exception(e)
         return None
 
+# Validazione dati
+def validate_sensor_data(data):
+    if not all(k in data for k in ["timestamp", "field_id", "temperature", "humidity", "soil_pH"]):
+        return False
+    
+    # Validazione range
+    if not (-50 <= data["temperature"] <= 60):
+        return False
+    if not (0 <= data["humidity"] <= 100):
+        return False
+    if not (0 <= data["soil_pH"] <= 14):
+        return False
+    
+    return True
+
 # Main loop
 while True:
     raw_data = fetch_weather_data(DEFAULT_LOCATION)
     if raw_data:
         prepared_data = validate_and_prepare_data(raw_data)
         if prepared_data:
+            # Rimuoviamo il campo local_time se presente
+            if 'local_time' in prepared_data:
+                del prepared_data['local_time']
             logger.info(f"✅ Invio: {prepared_data}")
             producer.send('weather-data', value=prepared_data)
         else:

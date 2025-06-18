@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.9-slim
 
 # Imposta le variabili d'ambiente per ottimizzare Python
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -24,11 +24,11 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # Copia solo i file necessari
 COPY producer.py .
 COPY wait_for_kafka.py .
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
 
 # Utente non-root per sicurezza
 RUN useradd -m appuser && chown -R appuser /app
 USER appuser
 
-CMD ["/entrypoint.sh"]
+CMD ["./entrypoint.sh"]
