@@ -181,6 +181,8 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
       MINIO_HOST: minio
       MINIO_PORT: 9000
+      COPERNICUS_CLIENT_ID: ${COPERNICUS_CLIENT_ID}
+      COPERNICUS_CLIENT_SECRET: ${COPERNICUS_CLIENT_SECRET}
     restart: unless-stopped
     mem_limit: 512m
     mem_reservation: 256m

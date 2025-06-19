@@ -11,11 +11,16 @@ from kafka import KafkaProducer
 from PIL import Image
 
 # === CONFIG ===
-client_id = os.getenv('COPERNICUS_CLIENT_ID', 'sh-00de3a55-400a-4b8d-b251-54889eb69cc8') #OPPURE INSERISCI IL TUO CLIENT ID 
-client_secret = os.getenv('COPERNICUS_CLIENT_SECRET', 'XnvG3JemZDrARJlyFUFoWCUFY7WrE6Gx') #OPPURE INSERISCI IL TUO CLIENT SECRET
+client_id = os.getenv('COPERNICUS_CLIENT_ID')
+client_secret = os.getenv('COPERNICUS_CLIENT_SECRET')
+
+# Check if the client id and client secret are set
+if not client_id or not client_secret:
+    raise ValueError("COPERNICUS_CLIENT_ID and COPERNICUS_CLIENT_SECRET must be set in environment variables")
+
 kafka_topic = 'satellite-data'
 kafka_server = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
-bbox = [10.894444, 45.266667, 10.909444, 45.281667]
+bbox = [10.894444, 45.266667, 10.909444, 45.281667] # Bounding box of the area of interest
 
 # === AUTENTICAZIONE ===
 def get_oauth_session():
