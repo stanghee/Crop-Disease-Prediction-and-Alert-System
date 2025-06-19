@@ -97,7 +97,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
-      - API_KEY=${API_KEY}
+      - API_KEY=${WEATHER_API_KEY}
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - TIMEZONE=Europe/Rome
       - DEFAULT_LOCATION=${DEFAULT_LOCATION}
@@ -181,6 +181,8 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
       MINIO_HOST: minio
       MINIO_PORT: 9000
+      COPERNICUS_CLIENT_ID: ${COPERNICUS_CLIENT_ID}
+      COPERNICUS_CLIENT_SECRET: ${COPERNICUS_CLIENT_SECRET}
     restart: unless-stopped
     mem_limit: 512m
     mem_reservation: 256m

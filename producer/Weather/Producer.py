@@ -94,7 +94,7 @@ def fetch_weather_data(location):
 def validate_and_prepare_data(data):
     try:
         # Usiamo il timestamp corrente con il fuso orario locale
-        current_timestamp = datetime.now(ZoneInfo(TIMEZONE)).isoformat()
+        current_timestamp = datetime.now(ZoneInfo(TIMEZONE))
         
         loc = data.get('location', {})
         curr = data.get('current', {})
@@ -126,7 +126,7 @@ def validate_and_prepare_data(data):
 
         return {
             "message_id": str(uuid.uuid4()),
-            "timestamp": current_timestamp,
+            "timestamp": current_timestamp.isoformat(),
             "location": location,
             "region": region,
             "country": country,
