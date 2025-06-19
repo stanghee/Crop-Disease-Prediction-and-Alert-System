@@ -59,9 +59,12 @@ def connect_to_db(retries=10, delay=5):
                 host=POSTGRES_HOST,
                 database=POSTGRES_DB,
                 user=POSTGRES_USER,
-                password=POSTGRES_PASSWORD,
-                options=f"-c timezone={TIMEZONE}"
+                password=POSTGRES_PASSWORD
             )
+            # Imposta il timezone per la sessione
+            with conn.cursor() as cur:
+                cur.execute(f"SET timezone = '{TIMEZONE}';")
+            conn.commit()
             logger.info("✅ Connessione a PostgreSQL riuscita.")
             return conn
         except psycopg2.Error as e:
@@ -166,11 +169,11 @@ for message in consumer:
                 timestamp, location, region, country, lat, lon,
                 temp_c, humidity, wind_kph, condition, uv
             ) VALUES (
-                (CAST(%s AS timestamptz) AT TIME ZONE 'UTC' AT TIME ZONE %s),
+                %s,
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
         ''', (
-            timestamp.isoformat(), TIMEZONE,
+            timestamp,
             data['location'], data['region'], data['country'],
             data['lat'], data['lon'], data['temp_c'], data['humidity'], data['wind_kph'],
             data['condition'], data['uv']
