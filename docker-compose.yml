@@ -97,7 +97,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
-      - API_KEY=${API_KEY}
+      - API_KEY=${WEATHER_API_KEY}
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - TIMEZONE=Europe/Rome
       - DEFAULT_LOCATION=${DEFAULT_LOCATION}
