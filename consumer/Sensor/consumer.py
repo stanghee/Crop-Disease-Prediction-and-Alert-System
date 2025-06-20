@@ -36,25 +36,73 @@ def connect_to_db():
         logger.error(f"❌ Errore connessione al database: {e}")
         raise
 
+def migrate_database_schema(conn):
+    """Migra lo schema del database per rimuovere colonna anomaly e standardizzare soil_ph"""
+    try:
+        with conn.cursor() as cur:
+            # Controlla se la tabella esiste già
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'sensor_data'
+            """)
+            existing_columns = [row[0] for row in cur.fetchall()]
+            
+            if existing_columns:
+                logger.info("🔄 Tabella sensor_data esistente trovata, eseguo migrazione...")
+                
+                # Rimuovi colonna anomaly se esiste
+                if 'anomaly' in existing_columns:
+                    logger.info("🔧 Rimozione colonna anomaly...")
+                    cur.execute('ALTER TABLE sensor_data DROP COLUMN IF EXISTS anomaly')
+                
+                # Rinomina soil_pH a soil_ph se necessario
+                if 'soil_ph' in existing_columns:
+                    # Colonna già corretta
+                    pass
+                elif 'soil_pH' in existing_columns:
+                    logger.info("🔧 Rinominazione soil_pH → soil_ph...")
+                    cur.execute('ALTER TABLE sensor_data RENAME COLUMN "soil_pH" TO soil_ph')
+                
+                logger.info("✅ Migrazione schema completata")
+            
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Errore durante migrazione: {e}")
+        conn.rollback()
+        return False
+
 def create_table(conn):
-    with conn.cursor() as cur:
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS sensor_data (
-                id SERIAL PRIMARY KEY,
-                timestamp TIMESTAMP WITH TIME ZONE,
-                field_id TEXT,
-                temperature FLOAT,
-                humidity FLOAT,
-                soil_pH FLOAT,
-                anomaly BOOLEAN
-            )
-        ''')
-    conn.commit()
-    logger.info("✅ Tabella sensor_data creata/verificata")
+    """Crea la tabella sensor_data con il nuovo schema"""
+    try:
+        with conn.cursor() as cur:
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS sensor_data (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMP WITH TIME ZONE,
+                    field_id TEXT,
+                    temperature FLOAT,
+                    humidity FLOAT,
+                    soil_ph FLOAT
+                )
+            ''')
+        conn.commit()
+        logger.info("✅ Tabella sensor_data creata/verificata")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Errore creazione tabella: {e}")
+        return False
 
 def main():
     # Connessione al database e creazione tabella
     conn = connect_to_db()
+    
+    # Migrazione schema esistente
+    migrate_database_schema(conn)
+    
+    # Creazione/verifica tabella
     create_table(conn)
 
     # Configurazione consumer
@@ -76,7 +124,7 @@ def main():
                 logger.info(f"📥 Ricevuto: {data}")
 
                 # Validazione dati
-                required_fields = ["timestamp", "field_id", "temperature", "humidity", "soil_pH", "anomaly"]
+                required_fields = ["timestamp", "field_id", "temperature", "humidity", "soil_ph"]
                 if not all(field in data for field in required_fields):
                     logger.warning(f"⚠️ Dati incompleti: {data}")
                     continue
@@ -88,15 +136,14 @@ def main():
                 with conn.cursor() as cur:
                     cur.execute('''
                         INSERT INTO sensor_data 
-                        (timestamp, field_id, temperature, humidity, soil_pH, anomaly)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                        (timestamp, field_id, temperature, humidity, soil_ph)
+                        VALUES (%s, %s, %s, %s, %s)
                     ''', (
                         timestamp,
                         data["field_id"],
                         data["temperature"],
                         data["humidity"],
-                        data["soil_pH"],
-                        data["anomaly"]
+                        data["soil_ph"]
                     ))
                 conn.commit()
                 logger.info("✅ Dati salvati nel database")

@@ -8,7 +8,6 @@ import requests
 from kafka import KafkaProducer
 from dotenv import load_dotenv
 import sys
-import psycopg2
 from zoneinfo import ZoneInfo
 
 # === Caricamento variabili ambiente ===
@@ -19,12 +18,6 @@ API_URL = "https://api.weatherapi.com/v1/current.json"
 DEFAULT_LOCATION = os.getenv("DEFAULT_LOCATION", "Verona")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")  # Default a Roma se non specificato
-
-# Configurazione DB
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
-POSTGRES_DB = os.getenv("POSTGRES_DB", "sensordb")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 
 # Logging setup
 logging.basicConfig(
@@ -119,21 +112,6 @@ def validate_and_prepare_data(data):
     except Exception as e:
         logger.error(f"❌ Errore durante la validazione dei dati: {e}")
         return None
-
-# Validazione dati
-def validate_sensor_data(data):
-    if not all(k in data for k in ["timestamp", "field_id", "temperature", "humidity", "soil_pH"]):
-        return False
-    
-    # Validazione range
-    if not (-50 <= data["temperature"] <= 60):
-        return False
-    if not (0 <= data["humidity"] <= 100):
-        return False
-    if not (0 <= data["soil_pH"] <= 14):
-        return False
-    
-    return True
 
 # Main loop
 while True:

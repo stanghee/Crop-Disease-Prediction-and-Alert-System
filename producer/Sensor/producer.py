@@ -26,24 +26,25 @@ producer = KafkaProducer(
 
 # === PARAMETRI DI CONFIGURAZIONE ===
 random.seed(42)
-ANOMALY_PROB = 0.001  # 0.1% di probabilità per evento anomalo
+# Probabilità configurabile per anomalie (default 0.1% = 0.001)
+ANOMALY_PROB = float(os.getenv("ANOMALY_PROBABILITY", "0.001"))
 
 # === CONFIGURAZIONE SENSORI PER OGNI CAMPO ===
 FIELD_CONFIG = {
     "field_01": {
         "temperature": {"dist": "gauss", "mean": 24, "std": 2},
         "humidity": {"dist": "uniform", "low": 50, "high": 80},
-        "soil_pH": {"dist": "gauss", "mean": 6.5, "std": 0.15}
+        "soil_ph": {"dist": "gauss", "mean": 6.5, "std": 0.15}
     },
     "field_02": {
         "temperature": {"dist": "gauss", "mean": 28, "std": 1.5},
         "humidity": {"dist": "uniform", "low": 40, "high": 70},
-        "soil_pH": {"dist": "gauss", "mean": 6.8, "std": 0.1}
+        "soil_ph": {"dist": "gauss", "mean": 6.8, "std": 0.1}
     },
     "field_03": {
         "temperature": {"dist": "gauss", "mean": 22, "std": 2.5},
         "humidity": {"dist": "uniform", "low": 60, "high": 90},
-        "soil_pH": {"dist": "gauss", "mean": 6.3, "std": 0.2}
+        "soil_ph": {"dist": "gauss", "mean": 6.3, "std": 0.2}
     }
 }
 
@@ -58,30 +59,37 @@ def generate_value(config):
         raise ValueError("Distribuzione non supportata")
 
 def inject_anomaly(sensor_type, value):
+    """Inietta valori anomali per simulare malfunzionamenti o condizioni estreme"""
     if sensor_type == "temperature":
         return round(value + random.choice([-10, 10]), 2)
     elif sensor_type == "humidity":
         return max(0, min(100, round(value + random.choice([-30, 30]), 2)))
-    elif sensor_type == "soil_pH":
+    elif sensor_type == "soil_ph":
         return round(value + random.choice([-2, 2]), 2)
     else:
         return value
 
 def generate_sensor_data(timestamp, field_id, config):
     data = {"timestamp": timestamp.isoformat(), "field_id": field_id}
-    anomaly_detected = False
-    for sensor in ["temperature", "humidity", "soil_pH"]:
+    
+    for sensor in ["temperature", "humidity", "soil_ph"]:
         value = generate_value(config[sensor])
+        
+        # Genera anomalia con probabilità configurabile
         if random.random() < ANOMALY_PROB:
             value = inject_anomaly(sensor, value)
-            anomaly_detected = True
+            logger.debug(f"🔴 Anomalia generata per {sensor} in {field_id}: {value}")
+        
         data[sensor] = value
-    data["anomaly"] = anomaly_detected
+    
     return data
 
 # === LOOP IN TEMPO REALE ===
 def main():
-    logger.info(f"✅ Simulazione in tempo reale avviata con timezone {TIMEZONE} (CTRL+C per fermare)...\n")
+    logger.info(f"✅ Simulazione sensori avviata con timezone {TIMEZONE}")
+    logger.info(f"🎯 Probabilità anomalie: {ANOMALY_PROB:.3f} ({ANOMALY_PROB*100:.1f}%)")
+    logger.info("📡 CTRL+C per fermare...\n")
+    
     while True:
         try:
             now = datetime.now(ZoneInfo(TIMEZONE))
