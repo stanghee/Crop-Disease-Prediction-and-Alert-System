@@ -17,7 +17,6 @@ load_dotenv()
 API_KEY = os.getenv("API_KEY")
 API_URL = "https://api.weatherapi.com/v1/current.json"
 DEFAULT_LOCATION = os.getenv("DEFAULT_LOCATION", "Verona")
-SENTRY_DSN = os.getenv("SENTRY_DSN")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")  # Default a Roma se non specificato
 
@@ -26,20 +25,6 @@ POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "sensordb")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-
-# === Inizializzazione Sentry (se configurato) ===
-SENTRY_ENABLED = False
-if SENTRY_DSN:
-    try:
-        import sentry_sdk
-        sentry_sdk.init(
-            dsn=SENTRY_DSN,
-            traces_sample_rate=1.0,
-            environment="production"
-        )
-        SENTRY_ENABLED = True
-    except ImportError:
-        SENTRY_ENABLED = False
 
 # Logging setup
 logging.basicConfig(
@@ -81,14 +66,10 @@ def fetch_weather_data(location):
         response = requests.get(API_URL, params=params)
         if response.status_code != 200:
             logger.error(f"❌ Errore API: {response.status_code} - {response.text}")
-            if SENTRY_ENABLED:
-                sentry_sdk.capture_message(f"API error: {response.status_code} - {response.text}", level="error")
             return None
         return response.json()
     except requests.RequestException as e:
         logger.error(f"❌ Errore nella richiesta all'API: {e}")
-        if SENTRY_ENABLED:
-            sentry_sdk.capture_exception(e)
         return None
 
 def validate_and_prepare_data(data):
@@ -102,8 +83,6 @@ def validate_and_prepare_data(data):
         location = loc.get('name') or last_valid_data['location']
         if not location:
             logger.error("❌ Nessuna location disponibile.")
-            if SENTRY_ENABLED:
-                sentry_sdk.capture_message("❌ Nessuna location disponibile.", level="error")
             return None
         last_valid_data['location'] = location
 
@@ -115,8 +94,6 @@ def validate_and_prepare_data(data):
         temp_c = curr.get('temp_c')
         if temp_c is None or not (-50 <= temp_c <= 60):
             logger.warning("⚠️ Temperatura non valida.")
-            if SENTRY_ENABLED:
-                sentry_sdk.capture_message("⚠️ Temperatura non valida.", level="warning")
             return None
 
         humidity = curr.get('humidity') if 0 <= (curr.get('humidity') or -1) <= 100 else -1
@@ -141,8 +118,6 @@ def validate_and_prepare_data(data):
 
     except Exception as e:
         logger.error(f"❌ Errore durante la validazione dei dati: {e}")
-        if SENTRY_ENABLED:
-            sentry_sdk.capture_exception(e)
         return None
 
 # Validazione dati

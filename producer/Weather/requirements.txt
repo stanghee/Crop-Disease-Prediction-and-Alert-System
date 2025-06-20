@@ -1,5 +1,4 @@
 requests
 kafka-python
 python-dotenv
-sentry-sdk
 psycopg2-binary

@@ -30,22 +30,7 @@ POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "weatherdb")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-SENTRY_DSN = os.getenv("SENTRY_DSN")
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")  # Default a Roma se non specificato
-
-# === Inizializzazione Sentry se configurato ===
-if SENTRY_DSN:
-    import sentry_sdk
-    from sentry_sdk import capture_exception
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        traces_sample_rate=1.0,
-        environment="production"
-    )
-    logger.info("✅ Sentry inizializzato.")
-else:
-    def capture_exception(e):  # Dummy fallback se Sentry non è attivo
-        pass
 
 if not POSTGRES_PASSWORD:
     logger.error("❌ POSTGRES_PASSWORD non definito!")
@@ -113,7 +98,6 @@ for attempt in range(10):
         break
     except NoBrokersAvailable as e:
         logger.warning("⚠️ Kafka non disponibile, nuovo tentativo tra 5 secondi...")
-        capture_exception(e)
         time.sleep(5)
 else:
     logger.error("❌ Errore: impossibile connettersi a Kafka dopo vari tentativi.")
@@ -183,12 +167,10 @@ for message in consumer:
 
     except Exception as e:
         logger.error(f"❌ Errore durante l'elaborazione del messaggio: {e}")
-        capture_exception(e)
         invalid_counter += 1
 
     # === Back-off if too many invalid messages ===
     if invalid_counter >= max_invalid:
         logger.error("🚨 Troppi messaggi non validi consecutivi. Pausa automatica.")
-        capture_exception(Exception("Max consecutive invalid messages reached."))
         time.sleep(backoff_time)
         invalid_counter = 0
