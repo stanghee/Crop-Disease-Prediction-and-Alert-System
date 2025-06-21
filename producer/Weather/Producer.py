@@ -10,14 +10,14 @@ from dotenv import load_dotenv
 import sys
 from zoneinfo import ZoneInfo
 
-# === Caricamento variabili ambiente ===
+# === Load environment variables ===
 load_dotenv()
 
 API_KEY = os.getenv("API_KEY")
 API_URL = "https://api.weatherapi.com/v1/current.json"
 DEFAULT_LOCATION = os.getenv("DEFAULT_LOCATION", "Verona")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
-TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")  # Default a Roma se non specificato
+TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")  # Default to Rome if not specified
 
 # Logging setup
 logging.basicConfig(
@@ -67,7 +67,7 @@ def fetch_weather_data(location):
 
 def validate_and_prepare_data(data):
     try:
-        # Usiamo il timestamp corrente con il fuso orario locale
+        # Use current timestamp with local timezone
         current_timestamp = datetime.now(ZoneInfo(TIMEZONE))
         
         loc = data.get('location', {})
@@ -119,7 +119,7 @@ while True:
     if raw_data:
         prepared_data = validate_and_prepare_data(raw_data)
         if prepared_data:
-            # Rimuoviamo il campo local_time se presente
+            # Remove local_time field if present
             if 'local_time' in prepared_data:
                 del prepared_data['local_time']
             logger.info(f"✅ Invio: {prepared_data}")

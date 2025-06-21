@@ -5,22 +5,22 @@ import psycopg2
 from kafka import KafkaConsumer
 from datetime import datetime
 
-# Configurazione logging
+# Logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Configurazione Kafka
+# Kafka configuration
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "sensordb")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
-TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")  # Default a Roma se non specificato
+TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")  # Default to Rome if not specified
 
-# Connessione al database
+# Database connection
 def connect_to_db():
     try:
         conn = psycopg2.connect(
@@ -30,17 +30,17 @@ def connect_to_db():
             password=POSTGRES_PASSWORD,
             options=f"-c timezone={TIMEZONE}"
         )
-        logger.info("✅ Connesso al database PostgreSQL")
+        logger.info("✅ Connected to PostgreSQL database")
         return conn
     except Exception as e:
-        logger.error(f"❌ Errore connessione al database: {e}")
+        logger.error(f"❌ Database connection error: {e}")
         raise
 
 def migrate_database_schema(conn):
-    """Migra lo schema del database per rimuovere colonna anomaly e standardizzare soil_ph"""
+    """Migrate database schema to remove anomaly column and standardize soil_ph"""
     try:
         with conn.cursor() as cur:
-            # Controlla se la tabella esiste già
+            # Check if table already exists
             cur.execute("""
                 SELECT column_name 
                 FROM information_schema.columns 
@@ -49,33 +49,33 @@ def migrate_database_schema(conn):
             existing_columns = [row[0] for row in cur.fetchall()]
             
             if existing_columns:
-                logger.info("🔄 Tabella sensor_data esistente trovata, eseguo migrazione...")
+                logger.info("🔄 Existing sensor_data table found, executing migration...")
                 
-                # Rimuovi colonna anomaly se esiste
+                # Remove anomaly column if exists
                 if 'anomaly' in existing_columns:
-                    logger.info("🔧 Rimozione colonna anomaly...")
+                    logger.info("🔧 Removing anomaly column...")
                     cur.execute('ALTER TABLE sensor_data DROP COLUMN IF EXISTS anomaly')
                 
-                # Rinomina soil_pH a soil_ph se necessario
+                # Rename soil_pH to soil_ph if necessary
                 if 'soil_ph' in existing_columns:
-                    # Colonna già corretta
+                    # Column already correct
                     pass
                 elif 'soil_pH' in existing_columns:
-                    logger.info("🔧 Rinominazione soil_pH → soil_ph...")
+                    logger.info("🔧 Renaming soil_pH → soil_ph...")
                     cur.execute('ALTER TABLE sensor_data RENAME COLUMN "soil_pH" TO soil_ph')
                 
-                logger.info("✅ Migrazione schema completata")
+                logger.info("✅ Schema migration completed")
             
         conn.commit()
         return True
         
     except Exception as e:
-        logger.error(f"❌ Errore durante migrazione: {e}")
+        logger.error(f"❌ Migration error: {e}")
         conn.rollback()
         return False
 
 def create_table(conn):
-    """Crea la tabella sensor_data con il nuovo schema"""
+    """Create sensor_data table with new schema"""
     try:
         with conn.cursor() as cur:
             cur.execute('''
@@ -89,23 +89,23 @@ def create_table(conn):
                 )
             ''')
         conn.commit()
-        logger.info("✅ Tabella sensor_data creata/verificata")
+        logger.info("✅ sensor_data table created/verified")
         return True
     except Exception as e:
-        logger.error(f"❌ Errore creazione tabella: {e}")
+        logger.error(f"❌ Table creation error: {e}")
         return False
 
 def main():
-    # Connessione al database e creazione tabella
+    # Database connection and table creation
     conn = connect_to_db()
     
-    # Migrazione schema esistente
+    # Existing schema migration
     migrate_database_schema(conn)
     
-    # Creazione/verifica tabella
+    # Table creation/verification
     create_table(conn)
 
-    # Configurazione consumer
+    # Consumer configuration
     consumer = KafkaConsumer(
         "sensor_data",
         bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
@@ -115,24 +115,24 @@ def main():
         value_deserializer=lambda m: json.loads(m.decode('utf-8'))
     )
 
-    logger.info("🟢 In ascolto sul topic 'sensor_data'...")
+    logger.info("🟢 Listening on topic 'sensor_data'...")
 
     try:
         for message in consumer:
             try:
                 data = message.value
-                logger.info(f"📥 Ricevuto: {data}")
+                logger.info(f"📥 Received: {data}")
 
-                # Validazione dati
+                # Data validation
                 required_fields = ["timestamp", "field_id", "temperature", "humidity", "soil_ph"]
                 if not all(field in data for field in required_fields):
-                    logger.warning(f"⚠️ Dati incompleti: {data}")
+                    logger.warning(f"⚠️ Incomplete data: {data}")
                     continue
 
-                # Conversione timestamp
+                # Timestamp conversion
                 timestamp = datetime.fromisoformat(data["timestamp"].rstrip("Z"))
 
-                # Inserimento nel database
+                # Database insertion
                 with conn.cursor() as cur:
                     cur.execute('''
                         INSERT INTO sensor_data 
@@ -146,14 +146,14 @@ def main():
                         data["soil_ph"]
                     ))
                 conn.commit()
-                logger.info("✅ Dati salvati nel database")
+                logger.info("✅ Data saved to database")
 
             except Exception as e:
-                logger.error(f"❌ Errore processamento messaggio: {e}")
+                logger.error(f"❌ Message processing error: {e}")
                 continue
 
     except Exception as e:
-        logger.error(f"❌ Errore fatale: {e}")
+        logger.error(f"❌ Fatal error: {e}")
     finally:
         consumer.close()
         conn.close()

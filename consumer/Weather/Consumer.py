@@ -13,7 +13,7 @@ import uuid
 
 consumer_id = socket.gethostname()
 
-# === Configurazione logging ===
+# === Logging configuration ===
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -21,7 +21,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === Caricamento variabili d'ambiente ===
+# === Load environment variables ===
 load_dotenv()
 
 KAFKA_SERVER = os.getenv("KAFKA_SERVER", "kafka:9092")
@@ -30,7 +30,7 @@ POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "weatherdb")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")  # Default a Roma se non specificato
+TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")  # Default to Rome if not specified
 
 if not POSTGRES_PASSWORD:
     logger.error("❌ POSTGRES_PASSWORD non definito!")
@@ -62,7 +62,7 @@ def connect_to_db(retries=10, delay=5):
 conn = connect_to_db()
 cursor = conn.cursor()
 
-# === Creazione tabella se non esiste ===
+# === Create table if it doesn't exist ===
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS weather_data (
         id SERIAL PRIMARY KEY,
@@ -94,7 +94,7 @@ for attempt in range(10):
             enable_auto_commit=True,
             group_id="weather-group"
         )
-        logger.info(f"✅ Connesso a Kafka. In ascolto sul topic '{TOPIC}'...")
+        logger.info(f"✅ Connected to Kafka. Listening on topic '{TOPIC}'...")
         break
     except NoBrokersAvailable as e:
         logger.warning("⚠️ Kafka non disponibile, nuovo tentativo tra 5 secondi...")
@@ -127,15 +127,15 @@ for message in consumer:
             invalid_counter += 1
             continue
         if not (0 <= data['humidity'] <= 100):
-            logger.warning("⚠️ Umidità fuori intervallo logico.")
+            logger.warning("⚠️ Humidity out of logical range.")
             invalid_counter += 1
             continue
         if not (0 <= data['uv'] <= 15):
-            logger.warning("⚠️ Indice UV fuori intervallo logico.")
+            logger.warning("⚠️ UV index out of logical range.")
             invalid_counter += 1
             continue
         if data['wind_kph'] < 0:
-            logger.warning("⚠️ Velocità del vento non può essere negativa.")
+            logger.warning("⚠️ Wind speed cannot be negative.")
             invalid_counter += 1
             continue
 
