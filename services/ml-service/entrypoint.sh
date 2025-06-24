@@ -4,7 +4,7 @@ echo "🚀 Starting Flink ML Service for Crop Disease Prediction..."
 
 # Wait for required services to be ready
 echo "⏳ Waiting for Kafka to be ready..."
-python -c "
+python3 -c "
 import time
 from kafka import KafkaConsumer
 from kafka.errors import NoBrokersAvailable
@@ -21,7 +21,7 @@ while True:
 "
 
 echo "⏳ Waiting for PostgreSQL to be ready..."
-python -c "
+python3 -c "
 import time
 import psycopg2
 import os
@@ -42,7 +42,7 @@ while True:
         time.sleep(5)
 "
 
-echo "✅ All dependencies ready. Starting Flink ML Service..."
+echo "✅ All dependencies ready. Starting Spark ML Service..."
 
-# Start the Flink ML service
-exec python flink_service.py 
+# Start the Spark ML service
+exec python3 spark_preprocessing_service.py 

@@ -18,7 +18,7 @@ client_secret = os.getenv('COPERNICUS_CLIENT_SECRET')
 if not client_id or not client_secret:
     raise ValueError("COPERNICUS_CLIENT_ID and COPERNICUS_CLIENT_SECRET must be set in environment variables")
 
-kafka_topic = 'satellite-data'
+kafka_topic = 'satellite_data'
 kafka_server = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 
 # Area of interest configuration (default: Verona area)

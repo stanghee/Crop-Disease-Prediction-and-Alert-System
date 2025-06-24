@@ -75,7 +75,7 @@ services:
       PGTZ: Europe/Rome
     command: ["postgres", "-c", "timezone=Europe/Rome"]
     volumes:
-      - ./infrastructure/databases/init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
+      - ./init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
@@ -88,10 +88,10 @@ services:
     shm_size: 256m
 
   weather-producer:
-    build: ./services/weather-service/producer
+    build: ./producer/Weather
     volumes:
-      - ./services/weather-service/producer/producer.py:/app/producer.py
-      - ./services/weather-service/producer/entrypoint.sh:/app/entrypoint.sh
+      - ./producer/Weather/producer.py:/app/producer.py
+      - ./producer/Weather/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
@@ -106,10 +106,10 @@ services:
     mem_reservation: 128m
 
   weather-consumer:
-    build: ./services/weather-service/consumer
+    build: ./consumer/Weather
     volumes:
-      - ./services/weather-service/consumer/consumer.py:/app/consumer.py
-      - ./services/weather-service/consumer/entrypoint.sh:/app/entrypoint.sh
+      - ./consumer/Weather/consumer.py:/app/consumer.py
+      - ./consumer/Weather/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
@@ -130,9 +130,9 @@ services:
     mem_reservation: 128m
 
   sensor-producer:
-    build: ./services/sensor-service/producer
+    build: ./producer/Sensor
     volumes:
-      - ./services/sensor-service/producer/entrypoint.sh:/app/entrypoint.sh
+      - ./producer/Sensor/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
@@ -146,10 +146,10 @@ services:
     mem_reservation: 128m
 
   sensor-consumer:
-    build: ./services/sensor-service/consumer
+    build: ./consumer/Sensor
     volumes:
-      - ./services/sensor-service/consumer/consumer.py:/app/consumer.py
-      - ./services/sensor-service/consumer/entrypoint.sh:/app/entrypoint.sh
+      - ./consumer/Sensor/consumer.py:/app/consumer.py
+      - ./consumer/Sensor/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
@@ -169,10 +169,10 @@ services:
     mem_reservation: 128m
 
   satellite-producer:
-    build: ./services/satellite-service/producer
+    build: ./producer/Satellite
     volumes:
-      - ./services/satellite-service/producer/producer.py:/app/producer.py
-      - ./services/satellite-service/producer/entrypoint.sh:/app/entrypoint.sh
+      - ./producer/Satellite/producer.py:/app/producer.py
+      - ./producer/Satellite/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
@@ -197,10 +197,10 @@ services:
     mem_reservation: 256m
 
   satellite-consumer:
-    build: ./services/satellite-service/consumer
+    build: ./consumer/Satellite
     volumes:
-      - ./services/satellite-service/consumer/consumer.py:/app/consumer.py
-      - ./services/satellite-service/consumer/entrypoint.sh:/app/entrypoint.sh
+      - ./consumer/Satellite/consumer.py:/app/consumer.py
+      - ./consumer/Satellite/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
@@ -220,9 +220,9 @@ services:
     mem_reservation: 256m
 
   spark-ml-service:
-    build: ./services/ml-service
+    build: ./spark_ml_service
     volumes:
-      - ./services/ml-service:/app
+      - ./spark_ml_service:/app
       - spark_models:/app/models
       - spark_checkpoints:/app/spark-checkpoints
     working_dir: /app

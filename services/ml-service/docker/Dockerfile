@@ -5,13 +5,11 @@ RUN apt-get update && apt-get install -y \
     curl \
     gcc \
     g++ \
+    default-jdk \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Java (required for Flink)
-RUN apt-get update && apt-get install -y openjdk-11-jdk
-
-# Set JAVA_HOME
-ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+# Set JAVA_HOME automatically
+ENV JAVA_HOME=/usr/lib/jvm/default-java
 
 # Set working directory
 WORKDIR /app
@@ -23,10 +21,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Expose Flink Web UI port
-EXPOSE 8081
+# Expose Spark UI port
+EXPOSE 4040
 
 # Create directories for models and checkpoints
-RUN mkdir -p models flink-checkpoints
+RUN mkdir -p models spark-checkpoints
 
-CMD ["python", "flink_service.py"] 
+CMD ["python", "spark_preprocessing_service.py"] 
