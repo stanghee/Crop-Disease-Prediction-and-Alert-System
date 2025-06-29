@@ -18,9 +18,16 @@ client_secret = os.getenv('COPERNICUS_CLIENT_SECRET')
 if not client_id or not client_secret:
     raise ValueError("COPERNICUS_CLIENT_ID and COPERNICUS_CLIENT_SECRET must be set in environment variables")
 
-kafka_topic = 'satellite-data'
+kafka_topic = 'satellite_data'
 kafka_server = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
-bbox = [10.894444, 45.266667, 10.909444, 45.281667] # Bounding box of the area of interest
+
+# Area of interest configuration (default: Verona area)
+bbox = [
+    float(os.getenv('BBOX_MIN_LON', '10.894444')),
+    float(os.getenv('BBOX_MIN_LAT', '45.266667')),
+    float(os.getenv('BBOX_MAX_LON', '10.909444')),
+    float(os.getenv('BBOX_MAX_LAT', '45.281667'))
+]
 
 # === AUTENTICAZIONE ===
 def get_oauth_session():
@@ -101,7 +108,7 @@ def fetch_and_send():
     img_rgb.save(buffered, format="PNG")
     img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-    # Messaggio da inviare
+    # Message to send
     message = {
         "timestamp": datetime.utcnow().isoformat(),
         "image_base64": img_base64,
@@ -110,7 +117,7 @@ def fetch_and_send():
         }
     }
 
-    # Invia a Kafka
+    # Send to Kafka
     producer = KafkaProducer(
         bootstrap_servers=[kafka_server],
         value_serializer=lambda v: json.dumps(v).encode('utf-8')
@@ -118,12 +125,13 @@ def fetch_and_send():
     producer.send(kafka_topic, message)
     producer.flush()
 
-    print("✅ Immagine inviata a Kafka.")
+    print("✅ Image sent to Kafka.")
 
-# === ESEGUI SUBITO ===
+# === EXECUTE IMMEDIATELY ===
 fetch_and_send()
 
-# === OGNI MINUTO ===
+# === OGNI MINUTO === 
+# Because we are supposed to use drone to get the image, but it is costly so we use satellite
 schedule.every(1).minutes.do(fetch_and_send)
 
 print("⏱ In ascolto ogni minuto...", flush=True)

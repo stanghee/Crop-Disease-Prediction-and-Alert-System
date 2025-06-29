@@ -9,7 +9,6 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-*.pkl
 
 # Cartelle virtual environment
 venv/
@@ -32,3 +31,74 @@ env/
 .vscode/
 .idea/
 *.code-workspace
+
+# Docker
+.docker/
+docker-compose.override.yml
+docker-compose.override.yaml
+.dockerignore
+
+# Database files 
+*.db
+*.sqlite*
+*.sql.backup
+pgdata/
+postgres_data/
+*.dump
+
+# Machine Learning / Flink
+models/*.pkl
+models/*.joblib
+models/*.h5
+models/*.model
+flink-checkpoints/
+*.checkpoint
+flink-state/
+checkpoints/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+.tox/
+
+# Data files
+data/
+datasets/
+*.csv
+*.parquet
+*.h5
+*.hdf5
+
+# Kafka/MinIO local data 
+kafka-logs/
+minio-data/
+zookeeper-data/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Backup files
+*~
+*.orig
+*.rej

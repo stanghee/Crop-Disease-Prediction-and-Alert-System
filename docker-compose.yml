@@ -75,7 +75,7 @@ services:
       PGTZ: Europe/Rome
     command: ["postgres", "-c", "timezone=Europe/Rome"]
     volumes:
-      - ./init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
+      - ./infrastructure/databases/init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
@@ -88,10 +88,10 @@ services:
     shm_size: 256m
 
   weather-producer:
-    build: ./producer/Weather
+    build: ./services/weather-service/producer
     volumes:
-      - ./producer/Weather/producer.py:/app/producer.py
-      - ./producer/Weather/entrypoint.sh:/app/entrypoint.sh
+      - ./services/weather-service/producer/producer.py:/app/producer.py
+      - ./services/weather-service/producer/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
@@ -106,16 +106,18 @@ services:
     mem_reservation: 128m
 
   weather-consumer:
-    build: ./consumer/Weather
+    build: ./services/weather-service/consumer
     volumes:
-      - ./consumer/Weather/consumer.py:/app/consumer.py
-      - ./consumer/Weather/entrypoint.sh:/app/entrypoint.sh
+      - ./services/weather-service/consumer/consumer.py:/app/consumer.py
+      - ./services/weather-service/consumer/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      spark-ml-service:
+        condition: service_started
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       POSTGRES_HOST: postgres
@@ -128,10 +130,9 @@ services:
     mem_reservation: 128m
 
   sensor-producer:
-    build: ./producer/Sensor
+    build: ./services/sensor-service/producer
     volumes:
-      - ./producer/Sensor/producer.py:/app/producer.py
-      - ./producer/Sensor/entrypoint.sh:/app/entrypoint.sh
+      - ./services/sensor-service/producer/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
@@ -139,21 +140,24 @@ services:
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - TIMEZONE=Europe/Rome
+      - ANOMALY_PROBABILITY=0.3
     restart: unless-stopped
     mem_limit: 256m
     mem_reservation: 128m
 
   sensor-consumer:
-    build: ./consumer/Sensor
+    build: ./services/sensor-service/consumer
     volumes:
-      - ./consumer/Sensor/consumer.py:/app/consumer.py
-      - ./consumer/Sensor/entrypoint.sh:/app/entrypoint.sh
+      - ./services/sensor-service/consumer/consumer.py:/app/consumer.py
+      - ./services/sensor-service/consumer/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      spark-ml-service:
+        condition: service_started
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       POSTGRES_HOST: postgres
@@ -165,10 +169,10 @@ services:
     mem_reservation: 128m
 
   satellite-producer:
-    build: ./producer/Satellite
+    build: ./services/satellite-service/producer
     volumes:
-      - ./producer/Satellite/producer.py:/app/producer.py
-      - ./producer/Satellite/entrypoint.sh:/app/entrypoint.sh
+      - ./services/satellite-service/producer/producer.py:/app/producer.py
+      - ./services/satellite-service/producer/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
@@ -183,21 +187,28 @@ services:
       MINIO_PORT: 9000
       COPERNICUS_CLIENT_ID: ${COPERNICUS_CLIENT_ID}
       COPERNICUS_CLIENT_SECRET: ${COPERNICUS_CLIENT_SECRET}
+      # Configurazione area geografica (default: Verona)
+      BBOX_MIN_LON: ${BBOX_MIN_LON:-10.894444}
+      BBOX_MIN_LAT: ${BBOX_MIN_LAT:-45.266667}
+      BBOX_MAX_LON: ${BBOX_MAX_LON:-10.909444}
+      BBOX_MAX_LAT: ${BBOX_MAX_LAT:-45.281667}
     restart: unless-stopped
     mem_limit: 512m
     mem_reservation: 256m
 
   satellite-consumer:
-    build: ./consumer/Satellite
+    build: ./services/satellite-service/consumer
     volumes:
-      - ./consumer/Satellite/consumer.py:/app/consumer.py
-      - ./consumer/Satellite/entrypoint.sh:/app/entrypoint.sh
+      - ./services/satellite-service/consumer/consumer.py:/app/consumer.py
+      - ./services/satellite-service/consumer/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
         condition: service_healthy
       minio:
         condition: service_healthy
+      spark-ml-service:
+        condition: service_started
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       MINIO_ENDPOINT: minio:9000
@@ -208,6 +219,35 @@ services:
     mem_limit: 512m
     mem_reservation: 256m
 
+  spark-ml-service:
+    build: ./services/ml-service
+    volumes:
+      - ./services/ml-service:/app
+      - spark_models:/app/models
+      - spark_checkpoints:/app/spark-checkpoints
+    working_dir: /app
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: sensordb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      TIMEZONE: Europe/Rome
+      SPARK_PARALLELISM: 4
+    ports:
+      - "4040:4040"  # Spark UI
+    command: ["python", "spark_preprocessing_service.py"]
+    restart: unless-stopped
+    mem_limit: 2g
+    mem_reservation: 1g
+
 volumes:
   postgres_data:
   minio_data:
+  spark_models:
+  spark_checkpoints:
