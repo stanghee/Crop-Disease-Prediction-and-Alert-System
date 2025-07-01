@@ -261,20 +261,24 @@ class SilverZoneProcessor:
             )
         
         # Add weather pattern analysis
-        window_spec = Window.partitionBy("location").orderBy("timestamp_parsed") \
-                           .rowsBetween(-2, 0)  # 3-hour rolling window
+        # Window for rolling averages
+        rolling_window_spec = Window.partitionBy("location").orderBy("timestamp_parsed") \
+                                   .rowsBetween(-2, 0)  # 3-hour rolling window
+        
+        # Window for lag functions (no frame specification)
+        lag_window_spec = Window.partitionBy("location").orderBy("timestamp_parsed")
         
         silver_df = silver_df \
             .withColumn("temp_trend", 
-                       col("temp_c") - lag("temp_c", 1).over(window_spec)) \
+                       col("temp_c") - lag("temp_c", 1).over(lag_window_spec)) \
             .withColumn("humidity_trend",
-                       col("humidity") - lag("humidity", 1).over(window_spec)) \
+                       col("humidity") - lag("humidity", 1).over(lag_window_spec)) \
             .withColumn("pressure_trend", 
                        when(col("wind_kph").isNotNull(),
-                            col("wind_kph") - lag("wind_kph", 1).over(window_spec))
+                            col("wind_kph") - lag("wind_kph", 1).over(lag_window_spec))
                        .otherwise(0)) \
-            .withColumn("temp_rolling_avg", avg("temp_c").over(window_spec)) \
-            .withColumn("humidity_rolling_avg", avg("humidity").over(window_spec))
+            .withColumn("temp_rolling_avg", avg("temp_c").over(rolling_window_spec)) \
+            .withColumn("humidity_rolling_avg", avg("humidity").over(rolling_window_spec))
         
         # Categorize weather conditions
         silver_df = silver_df \
@@ -326,11 +330,7 @@ class SilverZoneProcessor:
                 col("image_size_bytes").isNotNull()
             ) \
             .withColumn("timestamp_parsed",
-                       to_timestamp(col("timestamp"), "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX")) \
-            .withColumn("timestamp_parsed",
-                       when(col("timestamp_parsed").isNull(),
-                            to_timestamp(col("timestamp"), "yyyy-MM-dd'T'HH:mm:ssZ"))
-                       .otherwise(col("timestamp_parsed"))) \
+                       to_timestamp(col("timestamp"))) \
             .filter(col("timestamp_parsed").isNotNull()) \
             .withColumn("date", to_date(col("timestamp_parsed"))) \
             .withColumn("hour", hour(col("timestamp_parsed"))) \
@@ -375,13 +375,13 @@ class SilverZoneProcessor:
                 "center_lon",
                 when(col("bbox_valid"), 
                      (col("bbox_min_lon") + col("bbox_max_lon")) / 2)
-                .otherwise(null())
+                .otherwise(lit(None))
             ) \
             .withColumn(
                 "center_lat",
                 when(col("bbox_valid"),
                      (col("bbox_min_lat") + col("bbox_max_lat")) / 2)
-                .otherwise(null())
+                .otherwise(lit(None))
             ) \
             .withColumn(
                 # Data quality score

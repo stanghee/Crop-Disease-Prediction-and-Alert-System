@@ -7,7 +7,7 @@ Handles IoT sensors, weather data, and satellite images
 import os
 import logging
 import json
-import base64
+import base64 as b64
 from datetime import datetime
 from io import BytesIO
 from typing import Optional
@@ -218,7 +218,7 @@ class BronzeZoneProcessor:
                         image_filename = f"satellite_{timestamp_str}_{batch_id}.png"
                         
                         # Decode and save image to MinIO
-                        image_bytes = base64.b64decode(data.image_base64)
+                        image_bytes = b64.b64decode(data.image_base64)
                         self.minio_client.put_object(
                             "satellite-images",
                             image_filename,
