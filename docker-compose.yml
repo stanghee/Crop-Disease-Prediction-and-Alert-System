@@ -116,7 +116,7 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      spark-ml-service:
+      spark-data-lake-service:
         condition: service_started
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -156,7 +156,7 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      spark-ml-service:
+      spark-data-lake-service:
         condition: service_started
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -207,7 +207,7 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      spark-ml-service:
+      spark-data-lake-service:
         condition: service_started
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -219,32 +219,31 @@ services:
     mem_limit: 512m
     mem_reservation: 256m
 
-  spark-ml-service:
-    build: ./services/ml-service
+  spark-data-lake-service:
+    build: ./services/spark-service
     volumes:
-      - ./services/ml-service:/app
+      - ./services/spark-service:/app
       - spark_models:/app/models
       - spark_checkpoints:/app/spark-checkpoints
     working_dir: /app
     depends_on:
       kafka:
         condition: service_healthy
-      postgres:
+      minio:
         condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      POSTGRES_HOST: postgres
-      POSTGRES_DB: sensordb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
       TIMEZONE: Europe/Rome
       SPARK_PARALLELISM: 4
     ports:
       - "4040:4040"  # Spark UI
-    command: ["python", "spark_preprocessing_service.py"]
+    command: ["python", "main_service.py"]
     restart: unless-stopped
-    mem_limit: 2g
-    mem_reservation: 1g
+    mem_limit: 3g
+    mem_reservation: 2g
 
 volumes:
   postgres_data:
