@@ -92,6 +92,7 @@ while True:
         if prepared_data:
             logger.info(f"✅ Invio dati raw: {prepared_data}")
             producer.send('weather_data', value=prepared_data)
+            producer.flush()  # Assicura che il messaggio venga inviato immediatamente
         else:
             logger.warning("⛔ Errore nella preparazione dei dati.")
     else:

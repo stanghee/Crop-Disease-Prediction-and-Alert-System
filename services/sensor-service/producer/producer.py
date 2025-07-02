@@ -27,7 +27,7 @@ producer = KafkaProducer(
 # === CONFIGURATION PARAMETERS ===
 random.seed(42)
 # Configurable probability for anomalies (default 0.1% = 0.001)
-ANOMALY_PROB = float(os.getenv("ANOMALY_PROBABILITY", "0.001"))
+ANOMALY_PROB = float(os.getenv("ANOMALY_PROBABILITY", "0.001")) 
 
 # === SENSOR CONFIGURATION FOR EACH FIELD ===
 FIELD_CONFIG = {
