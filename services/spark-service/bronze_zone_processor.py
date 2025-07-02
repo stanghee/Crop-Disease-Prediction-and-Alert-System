@@ -58,7 +58,7 @@ class BronzeZoneProcessor:
             .option("failOnDataLoss", "false") \
             .load()
         
-        # Parse JSON and add Bronze metadata
+        # Parse JSON and add Bronze metadata with temporal partitioning
         bronze_df = kafka_df.select(
             # Parse the JSON value
             from_json(col("value").cast("string"), sensor_schema).alias("data"),
@@ -81,14 +81,26 @@ class BronzeZoneProcessor:
             "ingestion_timestamp",
             "source_type",
             "schema_version"
+        ).withColumn(
+            # Add temporal partitioning columns based on data timestamp (Europe/Rome timezone)
+            "timestamp_parsed", to_timestamp(col("timestamp"))
+        ).withColumn(
+            # Extract timezone-aware partitioning columns for Europe/Rome
+            "year", year(col("timestamp_parsed"))
+        ).withColumn(
+            "month", month(col("timestamp_parsed"))
+        ).withColumn(
+            "day", dayofmonth(col("timestamp_parsed"))
+        ).withColumn(
+            "hour", hour(col("timestamp_parsed"))
         )
         
-        # Write to Bronze zone as JSON
+        # Write to Bronze zone as JSON with temporal partitioning
         query = bronze_df.writeStream \
             .format("json") \
-            .option("path", f"{self.bronze_path}sensor_data/") \
-            .option("checkpointLocation", "/tmp/checkpoints/bronze_sensor") \
-            .partitionBy("source_type") \
+            .option("path", f"{self.bronze_path}iot/") \
+            .option("checkpointLocation", "/tmp/checkpoints/bronze_iot") \
+            .partitionBy("year", "month", "day", "hour") \
             .trigger(processingTime="30 seconds") \
             .outputMode("append") \
             .start()
@@ -129,7 +141,7 @@ class BronzeZoneProcessor:
             .option("failOnDataLoss", "false") \
             .load()
         
-        # Parse JSON and add Bronze metadata
+        # Parse JSON and add Bronze metadata with temporal partitioning
         bronze_df = kafka_df.select(
             from_json(col("value").cast("string"), weather_schema).alias("data"),
             col("topic").alias("kafka_topic"),
@@ -148,14 +160,26 @@ class BronzeZoneProcessor:
             "ingestion_timestamp",
             "source_type",
             "schema_version"
+        ).withColumn(
+            # Add temporal partitioning columns based on data timestamp (Europe/Rome timezone)
+            "timestamp_parsed", to_timestamp(col("timestamp"))
+        ).withColumn(
+            # Extract timezone-aware partitioning columns for Europe/Rome
+            "year", year(col("timestamp_parsed"))
+        ).withColumn(
+            "month", month(col("timestamp_parsed"))
+        ).withColumn(
+            "day", dayofmonth(col("timestamp_parsed"))
+        ).withColumn(
+            "hour", hour(col("timestamp_parsed"))
         )
         
-        # Write to Bronze zone as JSON
+        # Write to Bronze zone as JSON with temporal partitioning
         query = bronze_df.writeStream \
             .format("json") \
-            .option("path", f"{self.bronze_path}weather_data/") \
+            .option("path", f"{self.bronze_path}weather/") \
             .option("checkpointLocation", "/tmp/checkpoints/bronze_weather") \
-            .partitionBy("source_type") \
+            .partitionBy("year", "month", "day", "hour") \
             .trigger(processingTime="30 seconds") \
             .outputMode("append") \
             .start()
@@ -230,6 +254,25 @@ class BronzeZoneProcessor:
                         # Create metadata record
                         bbox = data.location.bbox if data.location and data.location.bbox else [0.0, 0.0, 0.0, 0.0]
                         
+                        # Parse timestamp for temporal partitioning (convert to Europe/Rome)
+                        import pytz
+                        
+                        if data.timestamp.endswith('Z'):
+                            # UTC timestamp
+                            timestamp_parsed = datetime.fromisoformat(data.timestamp.replace('Z', '+00:00'))
+                            # Convert to Europe/Rome
+                            timestamp_parsed = timestamp_parsed.astimezone(pytz.timezone('Europe/Rome'))
+                        elif '+' in data.timestamp or '-' in data.timestamp[-6:]:
+                            # Timezone-aware timestamp
+                            timestamp_parsed = datetime.fromisoformat(data.timestamp)
+                            # Convert to Europe/Rome
+                            timestamp_parsed = timestamp_parsed.astimezone(pytz.timezone('Europe/Rome'))
+                        else:
+                            # Assume local time (Europe/Rome)
+                            timestamp_parsed = datetime.fromisoformat(data.timestamp)
+                            rome_tz = pytz.timezone('Europe/Rome')
+                            timestamp_parsed = rome_tz.localize(timestamp_parsed)
+                        
                         metadata_record = {
                             "timestamp": data.timestamp,
                             "image_path": f"s3a://satellite-images/{image_filename}",
@@ -244,7 +287,12 @@ class BronzeZoneProcessor:
                             "kafka_timestamp": row.kafka_timestamp,
                             "ingestion_timestamp": row.ingestion_timestamp,
                             "source_type": "satellite",
-                            "schema_version": "1.0"
+                            "schema_version": "1.0",
+                            # Add temporal partitioning columns
+                            "year": timestamp_parsed.year,
+                            "month": timestamp_parsed.month,
+                            "day": timestamp_parsed.day,
+                            "hour": timestamp_parsed.hour
                         }
                         
                         processed_rows.append(metadata_record)
@@ -253,14 +301,14 @@ class BronzeZoneProcessor:
                     logger.error(f"Error processing satellite image in batch {batch_id}: {e}")
                     continue
             
-            # Save metadata to Bronze zone
+            # Save metadata to Bronze zone with temporal partitioning
             if processed_rows:
                 metadata_df = self.spark.createDataFrame(processed_rows)
                 metadata_df.write \
                     .mode("append") \
                     .format("json") \
-                    .partitionBy("source_type") \
-                    .save(f"{self.bronze_path}satellite_data/")
+                    .partitionBy("year", "month", "day", "hour") \
+                    .save(f"{self.bronze_path}satellite/")
                 
                 logger.info(f"Saved {len(processed_rows)} satellite metadata records to Bronze zone")
         

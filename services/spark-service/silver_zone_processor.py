@@ -35,8 +35,8 @@ class SilverZoneProcessor:
         """
         logger.info("Processing sensor data for Silver zone...")
         
-        # Read Bronze sensor data
-        bronze_df = self.spark.read.json(f"{self.bronze_path}sensor_data/")
+        # Read Bronze sensor data from new temporal structure (specific path pattern)
+        bronze_df = self.spark.read.json(f"{self.bronze_path}iot/year=*/month=*/day=*/hour=*/*.json")
         
         # Filter by date if specified
         if batch_date:
@@ -153,8 +153,8 @@ class SilverZoneProcessor:
         """
         logger.info("Processing weather data for Silver zone...")
         
-        # Read Bronze weather data
-        bronze_df = self.spark.read.json(f"{self.bronze_path}weather_data/")
+        # Read Bronze weather data from new temporal structure (specific path pattern)
+        bronze_df = self.spark.read.json(f"{self.bronze_path}weather/year=*/month=*/day=*/hour=*/*.json")
         
         # Filter by date if specified
         if batch_date:
@@ -312,8 +312,8 @@ class SilverZoneProcessor:
         """
         logger.info("Processing satellite data for Silver zone...")
         
-        # Read Bronze satellite data
-        bronze_df = self.spark.read.json(f"{self.bronze_path}satellite_data/")
+        # Read Bronze satellite data from new temporal structure (specific path pattern)
+        bronze_df = self.spark.read.json(f"{self.bronze_path}satellite/year=*/month=*/day=*/hour=*/*.json")
         
         # Filter by date if specified
         if batch_date:

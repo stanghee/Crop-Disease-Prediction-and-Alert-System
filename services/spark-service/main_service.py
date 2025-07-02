@@ -51,6 +51,7 @@ class MainDataLakeService:
             .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
             .config("spark.sql.adaptive.enabled", "true") \
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
+            .config("spark.sql.session.timeZone", "Europe/Rome") \
             .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000") \
             .config("spark.hadoop.fs.s3a.access.key", "minioadmin") \
             .config("spark.hadoop.fs.s3a.secret.key", "minioadmin") \
