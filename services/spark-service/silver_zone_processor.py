@@ -118,6 +118,7 @@ class SilverZoneProcessor:
         # Add statistical features using window functions
         window_spec = Window.partitionBy("field_id").orderBy("timestamp_parsed") \
                            .rowsBetween(-5, 0)  # Rolling window of last 6 readings
+                           # TODO: we have to review this, here (in silver layer) we have to collect all cleaned data 
         
         silver_df = silver_df \
             .withColumn("temp_rolling_avg", avg("temperature").over(window_spec)) \
@@ -134,6 +135,7 @@ class SilverZoneProcessor:
             )
         
         # Write to Silver zone as Parquet
+        # TODO: we have to review this, here (in silver layer) we have to collect all cleaned data and not only the last 6 readings overvriting the data
         silver_df.write \
             .mode("overwrite") \
             .format("parquet") \
