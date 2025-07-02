@@ -149,10 +149,14 @@ class MainDataLakeService:
     
     def get_system_status(self) -> Dict[str, Any]:
         """Get overall system status"""
+        # Get actual active streams from Spark
+        actual_active_streams = len(self.spark.streams.active)
+        
         status = {
             "timestamp": datetime.now().isoformat(),
             "streaming_queries": len(self.streaming_queries),
             "streaming_active": len([q for q in self.streaming_queries if q and q.isActive]),
+            "actual_spark_streams": actual_active_streams,
             "spark_app_id": self.spark.sparkContext.applicationId,
             "spark_app_name": self.spark.sparkContext.appName
         }
@@ -186,11 +190,21 @@ def run_streaming_worker(service: MainDataLakeService):
         service.start_streaming_processing()
         
         # Keep streaming alive
-        while service.is_running and service.streaming_queries:
-            active_queries = [q for q in service.streaming_queries if q and q.isActive]
-            if not active_queries:
-                logger.warning("No active streaming queries, restarting...")
-                service.start_streaming_processing()
+        while service.is_running:
+            # Check actual Spark streams, not just our list
+            actual_active_streams = len(service.spark.streams.active)
+            tracked_active_queries = len([q for q in service.streaming_queries if q and q.isActive])
+            
+            logger.info(f"Stream check - Tracked: {tracked_active_queries}, Actual Spark: {actual_active_streams}")
+            
+            if actual_active_streams == 0:
+                logger.warning("No active Spark streaming queries detected, restarting...")
+                try:
+                    service.stop_streaming_processing()
+                    time.sleep(5)  # Wait a bit before restarting
+                    service.start_streaming_processing()
+                except Exception as e:
+                    logger.error(f"Error restarting streams: {e}")
             
             time.sleep(30)  # Check every 30 seconds
             

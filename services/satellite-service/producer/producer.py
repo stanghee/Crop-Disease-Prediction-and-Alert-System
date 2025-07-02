@@ -9,6 +9,7 @@ from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
 from kafka import KafkaProducer
 from PIL import Image
+from zoneinfo import ZoneInfo
 
 # === CONFIG ===
 client_id = os.getenv('COPERNICUS_CLIENT_ID')
@@ -63,7 +64,9 @@ function evaluatePixel(sample) {
 
 # === FUNZIONE PRINCIPALE ===
 def fetch_and_send():
-    print("📡 Acquisizione immagine:", datetime.utcnow(), flush=True)
+    rome_tz = ZoneInfo("Europe/Rome")
+    current_time = datetime.now(rome_tz)
+    print("📡 Acquisizione immagine:", current_time, flush=True)
     oauth = get_oauth_session()
 
     request = {
@@ -98,7 +101,7 @@ def fetch_and_send():
     response_rgb = oauth.post(process_url, json=request)
 
     if response_rgb.status_code != 200:
-        print(f"❌ Errore immagine RGB {response_rgb.status_code}", flush=True)
+        print(f"❌ Error immagine RGB {response_rgb.status_code}", flush=True)
         print(response_rgb.text)
         return
 
@@ -110,7 +113,7 @@ def fetch_and_send():
 
     # Message to send
     message = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": current_time.isoformat(),
         "image_base64": img_base64,
         "location": {
             "bbox": bbox

@@ -137,8 +137,9 @@ class BronzeZoneProcessor:
             .format("kafka") \
             .option("kafka.bootstrap.servers", self.kafka_bootstrap_servers) \
             .option("subscribe", "weather_data") \
-            .option("startingOffsets", "latest") \
+            .option("startingOffsets", "earliest") \
             .option("failOnDataLoss", "false") \
+            .option("kafka.group.id", f"weather-bronze-{datetime.now().strftime('%Y%m%d%H%M%S')}") \
             .load()
         
         # Parse JSON and add Bronze metadata with temporal partitioning
