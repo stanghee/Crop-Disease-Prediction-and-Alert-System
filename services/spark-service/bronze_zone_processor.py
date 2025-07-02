@@ -54,7 +54,7 @@ class BronzeZoneProcessor:
             .format("kafka") \
             .option("kafka.bootstrap.servers", self.kafka_bootstrap_servers) \
             .option("subscribe", "sensor_data") \
-            .option("startingOffsets", "latest") \
+            .option("startingOffsets", "earliest") \
             .option("failOnDataLoss", "false") \
             .load()
         
@@ -66,21 +66,14 @@ class BronzeZoneProcessor:
             col("topic").alias("kafka_topic"),
             col("partition").alias("kafka_partition"),
             col("offset").alias("kafka_offset"),
-            col("timestamp").alias("kafka_timestamp"),
-            # Processing metadata
-            current_timestamp().alias("ingestion_timestamp"),
-            lit("sensor").alias("source_type"),
-            lit("1.0").alias("schema_version")
+            col("timestamp").alias("kafka_timestamp")
         ).select(
             # Flatten the data structure
             "data.*",
             "kafka_topic",
             "kafka_partition", 
             "kafka_offset",
-            "kafka_timestamp",
-            "ingestion_timestamp",
-            "source_type",
-            "schema_version"
+            "kafka_timestamp"
         ).withColumn(
             # Add temporal partitioning columns based on data timestamp (Europe/Rome timezone)
             "timestamp_parsed", to_timestamp(col("timestamp"))
@@ -93,7 +86,7 @@ class BronzeZoneProcessor:
             "day", dayofmonth(col("timestamp_parsed"))
         ).withColumn(
             "hour", hour(col("timestamp_parsed"))
-        )
+        ).drop("timestamp_parsed")
         
         # Write to Bronze zone as JSON with temporal partitioning
         query = bronze_df.writeStream \
@@ -148,19 +141,13 @@ class BronzeZoneProcessor:
             col("topic").alias("kafka_topic"),
             col("partition").alias("kafka_partition"),
             col("offset").alias("kafka_offset"),
-            col("timestamp").alias("kafka_timestamp"),
-            current_timestamp().alias("ingestion_timestamp"),
-            lit("weather").alias("source_type"),
-            lit("1.0").alias("schema_version")
+            col("timestamp").alias("kafka_timestamp")
         ).select(
             "data.*",
             "kafka_topic",
             "kafka_partition",
             "kafka_offset", 
-            "kafka_timestamp",
-            "ingestion_timestamp",
-            "source_type",
-            "schema_version"
+            "kafka_timestamp"
         ).withColumn(
             # Add temporal partitioning columns based on data timestamp (Europe/Rome timezone)
             "timestamp_parsed", to_timestamp(col("timestamp"))
@@ -173,7 +160,7 @@ class BronzeZoneProcessor:
             "day", dayofmonth(col("timestamp_parsed"))
         ).withColumn(
             "hour", hour(col("timestamp_parsed"))
-        )
+        ).drop("timestamp_parsed")
         
         # Write to Bronze zone as JSON with temporal partitioning
         query = bronze_df.writeStream \
@@ -228,8 +215,7 @@ class BronzeZoneProcessor:
                 col("topic").alias("kafka_topic"),
                 col("partition").alias("kafka_partition"),
                 col("offset").alias("kafka_offset"),
-                col("timestamp").alias("kafka_timestamp"),
-                current_timestamp().alias("ingestion_timestamp")
+                col("timestamp").alias("kafka_timestamp")
             )
             
             # Process each row to handle image extraction
@@ -286,9 +272,6 @@ class BronzeZoneProcessor:
                             "kafka_partition": row.kafka_partition,
                             "kafka_offset": row.kafka_offset,
                             "kafka_timestamp": row.kafka_timestamp,
-                            "ingestion_timestamp": row.ingestion_timestamp,
-                            "source_type": "satellite",
-                            "schema_version": "1.0",
                             # Add temporal partitioning columns
                             "year": timestamp_parsed.year,
                             "month": timestamp_parsed.month,
