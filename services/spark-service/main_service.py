@@ -142,49 +142,6 @@ class MainDataLakeService:
             raise
         return queries
     
-    def run_batch_processing(self, batch_date: Optional[str] = None):
-        """
-        Run Gold zone batch processing (and optionally Silver for backfill/historical only).
-        Note: Silver streaming is now the default for real-time. Use batch only for backfill.
-        """
-        logger.info(f"Starting batch processing for date: {batch_date or 'latest'} (Gold only, Silver streaming is default)")
-        try:
-            # Optionally: Uncomment next lines if you want to run batch Silver for backfill
-            # logger.info("Processing Silver zone (batch mode)...")
-            # silver_results = self.silver_processor.run_all_silver_processing(batch_date)
-            # logger.info(f"Silver processing completed: {silver_results}")
-            # Gold zone processing
-            logger.info("Processing Gold zone...")
-            gold_results = self.gold_processor.run_all_gold_processing(batch_date)
-            logger.info(f"Gold processing completed: {gold_results}")
-            return {
-                "batch_date": batch_date or datetime.now().strftime("%Y-%m-%d"),
-                # "silver_results": silver_results,  # Uncomment if batch Silver is run
-                "gold_results": gold_results,
-                "processing_time": datetime.now().isoformat()
-            }
-        except Exception as e:
-            logger.error(f"Error in batch processing: {e}")
-            raise
-    
-    def run_continuous_batch_processing(self, interval_minutes: int = 5):
-        """Run batch processing continuously at specified intervals"""
-        logger.info(f"Starting continuous batch processing every {interval_minutes} minutes")
-        
-        while self.is_running:
-            try:
-                # Run batch processing
-                results = self.run_batch_processing()
-                logger.info(f"Batch processing completed: {results}")
-                
-                # Wait for next interval
-                time.sleep(interval_minutes * 60)
-                
-            except Exception as e:
-                logger.error(f"Error in continuous batch processing: {e}")
-                # Wait before retrying
-                time.sleep(60)
-    
     def get_system_status(self) -> Dict[str, Any]:
         """Get overall system status"""
         # Get actual active streams from Spark
@@ -199,13 +156,11 @@ class MainDataLakeService:
             "spark_app_name": self.spark.sparkContext.appName
         }
         
+        # Gold processor status
         try:
-            # Get ML feature summary
-            ml_summary = self.gold_processor.get_ml_feature_summary()
-            status["ml_features"] = ml_summary
-            
+            status["gold_processor"] = "available"
         except Exception as e:
-            logger.error(f"Error getting system status: {e}")
+            logger.error(f"Error getting Gold processor status: {e}")
             status["error"] = str(e)
         
         return status
@@ -283,13 +238,6 @@ def run_silver_streaming_worker(service: MainDataLakeService):
     else:
         logger.info("Silver streaming worker stopped")
 
-def run_batch_worker(service: MainDataLakeService):
-    """Worker function for batch processing"""
-    try:
-        service.run_continuous_batch_processing(interval_minutes=5)
-    except Exception as e:
-        logger.error(f"Error in batch worker: {e}")
-
 def main():
     """Main entry point"""
     logger.info("Starting Crop Disease Data Lake Service...")
@@ -310,14 +258,6 @@ def main():
             daemon=True
         )
         silver_thread.start()
-
-        # Start batch processing in background thread (optional)
-        batch_thread = threading.Thread(
-            target=run_batch_worker,
-            args=(service,),
-            daemon=True
-        )
-        batch_thread.start()
 
         # Main monitoring loop
         while True:

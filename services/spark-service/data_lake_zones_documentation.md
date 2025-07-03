@@ -1,36 +1,36 @@
-# Pipeline Big Data a 3 Zone per Monitoraggio Agricolo
+# 3-Zone Data Lake Pipeline for Agricultural Monitoring
 
-## Architettura Generale
+## General Architecture
 
-La pipeline implementa una struttura **Data Lake a 3 zone** (Bronze, Silver, Gold) seguendo la metodologia **Delta Lake** per garantire ACID transactions, schema evolution e time travel capabilities.
+The pipeline implements a **3-zone Data Lake structure** (Bronze, Silver, Gold) following the **Delta Lake** methodology to ensure ACID transactions, schema evolution, and time travel capabilities.
 
 ```
-Kafka Topics → Bronze Zone → Silver Zone → Gold Zone → ML Models & Dashboard
+Kafka Topics → Bronze Zone → Silver Zone → Gold Zone → Dashboard
      ↓              ↓             ↓            ↓
-Raw Data    Immutable Raw   Validated &   ML Features &
-            + Metadata      Cleaned       Aggregations
+Raw Data    Immutable Raw   Validated &   Dashboard KPIs
+            + Metadata      Cleaned       
 ```
 
-## Struttura delle Zone
+## Zone Structure
 
 ### 🥉 BRONZE ZONE (Raw Data Lake)
-**Principio**: Dati immutabili il più vicino possibile alla forma originale
+**Principle**: Immutable data as close as possible to the original form
 
 ### 🥈 SILVER ZONE (Curated Data Lake) 
-**Principio**: Dati validati, puliti e con schema consistente
+**Principle**: Validated, cleaned data with consistent schema
 
 ### 🥇 GOLD ZONE (Business-Ready Data Lake)
-**Principio**: Feature pronte per ML e KPI aggregati per dashboard
+**Principle**: Aggregated KPIs for dashboard
 
 ---
 
-## 1. DATI IoT SENSORI
+## 1. IoT SENSOR DATA
 
-### 🥉 BRONZE ZONE - Sensori IoT
+### 🥉 BRONZE ZONE - IoT Sensors
 
-**Fonte**: Kafka topic `sensor_data`
+**Source**: Kafka topic `sensor_data`
 
-**Struttura Dati Originali**:
+**Original Data Structure**:
 ```json
 {
   "timestamp": "2024-01-15T14:30:00+01:00",
@@ -41,15 +41,15 @@ Raw Data    Immutable Raw   Validated &   ML Features &
 }
 ```
 
-**Trasformazioni Bronze**:
-- ✅ Aggiunta timestamp di ingestione
-- ✅ Aggiunta metadati Kafka (offset, partition)
-- ✅ Aggiunta source_type per tracciabilità
-- ❌ NESSUNA validazione o pulizia
+**Bronze Transformations**:
+- ✅ Addition of ingestion timestamp
+- ✅ Addition of Kafka metadata (offset, partition, topic)
+- ✅ Temporal partitioning (year, month, day, hour)
+- ❌ NO validation or cleaning
 
-**Formato di Salvataggio**: JSON
-**Percorso**: `s3a://bronze/sensor_data/`
-**Partitioning**: Per `source_type`
+**Storage Format**: JSON
+**Path**: `s3a://bronze/iot/`
+**Partitioning**: By `year`, `month`, `day`, `hour`
 **Schema**:
 ```python
 StructType([
@@ -58,75 +58,114 @@ StructType([
     StructField("temperature", DoubleType(), True),        # Temperature in °C
     StructField("humidity", DoubleType(), True),           # Humidity %
     StructField("soil_ph", DoubleType(), True),           # Soil pH
-    StructField("kafka_timestamp", TimestampType(), True), # Kafka ingestion time
-    StructField("ingestion_timestamp", TimestampType(), True), # Spark ingestion time
-    StructField("source_type", StringType(), True)        # Always "sensor"
+    StructField("kafka_topic", StringType(), True),       # Kafka topic
+    StructField("kafka_partition", LongType(), True),     # Kafka partition
+    StructField("kafka_offset", LongType(), True),        # Kafka offset
+    StructField("kafka_timestamp", StringType(), True),   # Kafka ingestion time
+    StructField("year", IntegerType(), True),             # Temporal partitioning
+    StructField("month", IntegerType(), True),
+    StructField("day", IntegerType(), True),
+    StructField("hour", IntegerType(), True)
 ])
 ```
 
-### 🥈 SILVER ZONE - Sensori IoT
+### 🥈 SILVER ZONE - IoT Sensors
 
-**Trasformazioni Silver**:
-- ✅ Validazione range valori (temp: -10°C to 50°C, humidity: 0-100%, pH: 3-9)
-- ✅ Parsing timestamp con timezone handling
-- ✅ Rilevamento anomalie per sensor (flag booleani)
-- ✅ Aggiunta colonne derivate (date, hour)
-- ✅ Rimozione record con valori null critici
+**Silver Transformations**:
+- ✅ Value range validation (temp: -20°C to 60°C, humidity: 0-100%, pH: 3-9)
+- ✅ Timestamp parsing with timezone handling
+- ✅ Addition of derived columns (date, hour, day_of_week, month, year)
+- ✅ Data validity flags (temperature_valid, humidity_valid, ph_valid)
+- ✅ Removal of records with critical null values
 
-**Formato di Salvataggio**: Parquet (compresso, schema evolution)
-**Percorso**: `s3a://silver/sensor_data/`
-**Partitioning**: Per `date` e `field_id`
-**Schema Aggiuntivo**:
+**Storage Format**: Parquet (compressed, schema evolution)
+**Path**: `s3a://silver/iot/`
+**Partitioning**: By `date` and `field_id`
+**Additional Schema**:
 ```python
-# Schema originale +
+# Original schema +
 StructField("timestamp_parsed", TimestampType(), True),
 StructField("date", DateType(), True),
 StructField("hour", IntegerType(), True),
-StructField("temperature_anomaly", BooleanType(), True),
-StructField("humidity_anomaly", BooleanType(), True),
-StructField("ph_anomaly", BooleanType(), True),
-StructField("has_anomaly", BooleanType(), True)
+StructField("day_of_week", IntegerType(), True),
+StructField("month", IntegerType(), True),
+StructField("year", IntegerType(), True),
+StructField("temperature_valid", BooleanType(), True),
+StructField("humidity_valid", BooleanType(), True),
+StructField("ph_valid", BooleanType(), True)
 ```
 
-### 🥇 GOLD ZONE - Sensori IoT
+### 🥇 GOLD ZONE - IoT Sensors
 
-**Trasformazioni Gold**:
+**Gold Transformations**:
 
-#### A) ML Features Table
-**Aggregazioni giornaliere per field**:
+#### A) Real-time Metrics Table (`s3a://gold/realtime_metrics/`)
+**30-minute aggregations per field**:
+```python
+- current_temperature, current_humidity, current_soil_ph
+- avg_temperature_30min, std_temperature_30min, min_temperature_30min, max_temperature_30min
+- avg_humidity_30min, std_humidity_30min, min_humidity_30min, max_humidity_30min
+- avg_soil_ph_30min, std_soil_ph_30min
+- temperature_valid_rate_30min, humidity_valid_rate_30min, ph_valid_rate_30min
+- readings_count_30min, temp_range_30min, humidity_range_30min
+- status (HEALTHY/DATA_ISSUE), data_freshness_minutes, is_online
+```
+
+#### B) Hourly Aggregations Table (`s3a://gold/hourly_aggregations/`)
+**Hourly statistics for trend analysis**:
 ```python
 - avg_temperature, std_temperature, min_temperature, max_temperature
-- avg_humidity, std_humidity  
+- avg_humidity, std_humidity, min_humidity, max_humidity
 - avg_soil_ph, std_soil_ph
-- anomaly_count, total_readings, anomaly_rate
-- risk_score (HIGH/MEDIUM/LOW basato su anomaly_rate)
+- temperature_valid_rate, humidity_valid_rate, ph_valid_rate
+- readings_count, temp_range, humidity_range
+- hourly_quality_status (VALID/DATA_ISSUE)
 ```
 
-#### B) Dashboard KPIs Table
-**Metriche real-time (ultimi 7 giorni)**:
+#### C) Alert Summary Table (`s3a://gold/alert_summary/`)
+**Data quality and alert metrics**:
 ```python
-- current_avg_temp, current_avg_humidity, current_avg_ph
-- recent_anomalies (count)
+- invalid_temperature_count, invalid_humidity_count, invalid_ph_count
+- total_readings, invalid_rate
+- alert_status (HIGH/MEDIUM/LOW)
 ```
 
-**Formato di Salvataggio**: Delta Lake (ACID, versioning)
-**Percorsi**: 
-- `s3a://gold/sensor_ml_features/`
-- `s3a://gold/sensor_dashboard_kpis/`
+#### D) Field Performance Ranking Table (`s3a://gold/field_performance_ranking/`)
+**Field performance and quality assessment**:
+```python
+- temperature_valid_rate, humidity_valid_rate, ph_valid_rate
+- overall_validity_score, performance_grade (A/B/C/D/F)
+- performance_rank, total_readings
+```
 
-**Disponibilità**:
-- **ML Models**: Lettura diretta da Delta tables per training
-- **Dashboard**: Query SQL su Delta tables via Spark SQL
+#### E) Dashboard Overview Table (`s3a://gold/dashboard_overview/`)
+**System-wide statistics and KPIs**:
+```python
+- total_fields, grade_a_fields, grade_b_fields, grade_c_fields, grade_d_fields, grade_f_fields
+- avg_validity_score, avg_temperature_valid_rate, avg_humidity_valid_rate, avg_ph_valid_rate
+```
+
+**Storage Format**: Delta Lake (ACID, versioning)
+**Paths**: 
+- `s3a://gold/realtime_metrics/`
+- `s3a://gold/hourly_aggregations/`
+- `s3a://gold/alert_summary/`
+- `s3a://gold/field_performance_ranking/`
+- `s3a://gold/dashboard_overview/`
+
+**Availability**:
+- **Dashboard**: SQL queries on Delta tables via Spark SQL
+- **Monitoring**: Real-time KPIs and performance metrics
 
 ---
 
-## 2. DATI METEO
+## 2. WEATHER DATA
 
-### 🥉 BRONZE ZONE - Meteo
+### 🥉 BRONZE ZONE - Weather
 
-**Fonte**: Kafka topic `weather_data` (WeatherAPI)
+**Source**: Kafka topic `weather_data` (WeatherAPI)
 
-**Struttura Dati Originali**:
+**Original Data Structure**:
 ```json
 {
   "message_id": "uuid-12345",
@@ -144,56 +183,44 @@ StructField("has_anomaly", BooleanType(), True)
 }
 ```
 
-**Trasformazioni Bronze**:
-- ✅ Conservazione completa risposta API
-- ✅ Aggiunta metadati ingestione
-- ❌ NESSUNA validazione
+**Bronze Transformations**:
+- ✅ Complete API response preservation
+- ✅ Addition of ingestion metadata
+- ✅ Temporal partitioning (year, month, day, hour)
+- ❌ NO validation
 
-**Formato**: JSON
-**Percorso**: `s3a://bronze/weather_data/`
-**Partitioning**: Per `source_type`
+**Format**: JSON
+**Path**: `s3a://bronze/weather/`
+**Partitioning**: By `year`, `month`, `day`, `hour`
 
-### 🥈 SILVER ZONE - Meteo
+### 🥈 SILVER ZONE - Weather
 
-**Trasformazioni Silver**:
-- ✅ Validazione range temperatura (-50°C to 60°C)
-- ✅ Validazione humidity (0-100%)
-- ✅ Validazione coordinate geografiche
-- ✅ Parsing timestamp e timezone
-- ✅ Flagging dati validi/invalidi
+**Silver Transformations**:
+- ✅ Temperature range validation (-50°C to 60°C)
+- ✅ Humidity validation (0-100%)
+- ✅ Geographic coordinates validation
+- ✅ Timestamp parsing and timezone handling
+- ✅ Addition of derived columns (date, hour, day_of_week, month, year)
+- ✅ Data validity flags (temp_valid, humidity_valid, coordinates_valid)
 
-**Formato**: Parquet
-**Percorso**: `s3a://silver/weather_data/`
-**Partitioning**: Per `date` e `location`
+**Format**: Parquet
+**Path**: `s3a://silver/weather/`
+**Partitioning**: By `date` and `location`
 
-### 🥇 GOLD ZONE - Meteo
+### 🥇 GOLD ZONE - Weather
 
-**Trasformazioni Gold**:
-
-#### A) Weather ML Features
-**Aggregazioni giornaliere per location**:
-```python
-- avg_temperature, max_temperature, min_temperature
-- avg_humidity, avg_wind_speed, avg_uv_index
-- dominant_condition (most frequent)
-```
-
-**Formato**: Delta Lake
-**Percorso**: `s3a://gold/weather_ml_features/`
-
-**Disponibilità**:
-- **ML Models**: Join con sensor features per correlazioni meteo-sensori
-- **Dashboard**: Visualizzazione trend meteo per area
+**Note**: Weather data Gold zone processing is not currently implemented in the GoldZoneProcessor.
+Weather data is processed through Bronze and Silver zones only.
 
 ---
 
-## 3. IMMAGINI SATELLITARI
+## 3. SATELLITE IMAGES
 
-### 🥉 BRONZE ZONE - Satellitari
+### 🥉 BRONZE ZONE - Satellite
 
-**Fonte**: Kafka topic `satellite_data` (Copernicus Sentinel-2)
+**Source**: Kafka topic `satellite_data` (Copernicus Sentinel-2)
 
-**Struttura Dati Originali**:
+**Original Data Structure**:
 ```json
 {
   "timestamp": "2024-01-15T14:30:00Z",
@@ -204,16 +231,17 @@ StructField("has_anomaly", BooleanType(), True)
 }
 ```
 
-**Trasformazioni Bronze**:
-- ✅ Estrazione immagine da base64
-- ✅ Salvataggio immagine su MinIO bucket separato
-- ✅ Creazione metadata record con path immagine
-- ✅ Estrazione coordinate bounding box
+**Bronze Transformations**:
+- ✅ Image extraction from base64
+- ✅ Image storage on separate MinIO bucket
+- ✅ Metadata record creation with image path
+- ✅ Bounding box coordinates extraction
+- ✅ Temporal partitioning
 
-**Formato Immagini**: PNG su MinIO bucket `satellite-images`
-**Formato Metadata**: JSON
-**Percorso**: `s3a://bronze/satellite_data/`
-**Schema Metadata**:
+**Image Format**: PNG on MinIO bucket `satellite-images`
+**Metadata Format**: JSON
+**Path**: `s3a://bronze/satellite_data/`
+**Metadata Schema**:
 ```python
 {
   "timestamp": "2024-01-15T14:30:00Z",
@@ -222,162 +250,100 @@ StructField("has_anomaly", BooleanType(), True)
   "bbox_min_lat": 45.266667,
   "bbox_max_lon": 10.909444,
   "bbox_max_lat": 45.281667,
-  "ingestion_timestamp": "2024-01-15T14:31:15+01:00",
-  "source_type": "satellite"
+  "image_size_bytes": 1024000
 }
 ```
 
-### 🥈 SILVER ZONE - Satellitari
+### 🥈 SILVER ZONE - Satellite
 
-**Trasformazioni Silver**:
-- ✅ Validazione metadata immagine
-- ✅ Controllo integrità file immagine
-- ✅ Validazione coordinate geografiche
-- ✅ Calcolo area coperta (km²)
-- ✅ Assessment qualità immagine (cloud coverage, resolution)
+**Silver Transformations**:
+- ✅ Image metadata validation
+- ✅ File integrity check
+- ✅ Geographic coordinates validation
+- ✅ Coverage area calculation (km²)
+- ✅ Image quality assessment (cloud coverage, resolution)
 
-**Formato**: Parquet (metadata) + PNG (immagini validate)
-**Percorso**: `s3a://silver/satellite_data/`
-**Partitioning**: Per `date`
+**Format**: Parquet (metadata) + PNG (validated images)
+**Path**: `s3a://silver/satellite_data/`
+**Partitioning**: By `date`
 
-### 🥇 GOLD ZONE - Satellitari
+### 🥇 GOLD ZONE - Satellite
 
-**Trasformazioni Gold**:
-
-#### A) Vegetation Indices
-```python
-- NDVI (Normalized Difference Vegetation Index)
-- EVI (Enhanced Vegetation Index)  
-- SAVI (Soil-Adjusted Vegetation Index)
-```
-
-#### B) Crop Health Indicators
-```python
-- vegetation_health_score (0-100)
-- stress_indicators (drought, disease, pest)
-- change_detection (comparison with previous images)
-```
-
-#### C) Geospatial Features
-```python
-- field_coverage_percentage
-- vegetation_density_map
-- anomaly_regions (coordinate clusters)
-```
-
-**Formato**: Delta Lake (metadata + indices) + GeoTIFF (processed images)
-**Percorsi**:
-- `s3a://gold/satellite_vegetation_indices/`
-- `s3a://gold/satellite_health_indicators/`
-
-**Disponibilità**:
-- **ML Models**: Features di vegetazione per correlazione con sensori
-- **Dashboard**: Mappe di calore, zone a rischio, trend temporali
+**Note**: Satellite data Gold zone processing is not currently implemented in the GoldZoneProcessor.
+Satellite data is processed through Bronze and Silver zones only.
 
 ---
 
-## 4. FEATURE INTEGRATE (Cross-Source)
-
-### 🥇 GOLD ZONE - Integrated Features
-
-**Combinazione delle 3 fonti dati**:
-
-```python
-integrated_features = sensor_gold 
-    .join(weather_gold, on="date") 
-    .join(satellite_gold, on=["date", "field_coordinates"])
-```
-
-**Feature Derivate**:
-```python
-- temp_differential (sensor vs weather)
-- humidity_differential (sensor vs weather)
-- vegetation_sensor_correlation (NDVI vs soil conditions)
-- weather_stress_factor (combination of weather extremes)
-- multi_source_risk_score (weighted combination)
-```
-
-**Formato**: Delta Lake
-**Percorso**: `s3a://gold/integrated_ml_features/`
-
----
-
-## 5. PIPELINE PROCESSING
+## 4. PIPELINE PROCESSING
 
 ### Streaming Processing (Bronze Zone)
-- **Frequenza**: Real-time (30 seconds micro-batches)
-- **Tecnologia**: Spark Structured Streaming
-- **Checkpointing**: Fault-tolerance con recovery automatico
+- **Frequency**: Real-time (30 seconds micro-batches)
+- **Technology**: Spark Structured Streaming
+- **Checkpointing**: Fault-tolerance with automatic recovery
 
-### Batch Processing (Silver + Gold Zone)  
-- **Frequenza**: Ogni 5 minuti
-- **Tecnologia**: Spark Batch Jobs
-- **Orchestrazione**: Schedulazione interna con retry logic
+### Streaming Processing (Silver Zone)
+- **Frequency**: Real-time (1 minute micro-batches)
+- **Technology**: Spark Structured Streaming
+- **Checkpointing**: Fault-tolerance with automatic recovery
+
+### Batch Processing (Gold Zone)  
+- **Frequency**: Every 5 minutes
+- **Technology**: Spark Batch Jobs
+- **Orchestration**: Internal scheduling with retry logic
 
 ### Schema Evolution
-- **Bronze**: Schema flessibile (JSON)
-- **Silver**: Schema validato con evolution support
-- **Gold**: Schema ottimizzato per query performance
+- **Bronze**: Flexible schema (JSON)
+- **Silver**: Validated schema with evolution support
+- **Gold**: Optimized schema for query performance
 
 ---
 
-## 6. ACCESSO AI DATI
+## 5. DATA ACCESS
 
-### Per Modelli ML
-```python
-# Spark SQL
-spark.sql("SELECT * FROM delta.`s3a://gold/integrated_ml_features/`")
-
-# Direct Delta table access
-from delta.tables import DeltaTable
-ml_features = DeltaTable.forPath(spark, "s3a://gold/integrated_ml_features/")
-```
-
-### Per Dashboard
+### For Dashboard
 ```python
 # Real-time KPIs
-dashboard_data = spark.read.format("delta").load("s3a://gold/sensor_dashboard_kpis/")
+dashboard_data = spark.read.format("delta").load("s3a://gold/realtime_metrics/")
 
 # Time-series analysis
-historical_data = spark.read.format("delta").load("s3a://gold/weather_ml_features/") \
+historical_data = spark.read.format("delta").load("s3a://gold/hourly_aggregations/") \
     .filter(col("date") >= "2024-01-01")
+
+# Field performance
+performance_data = spark.read.format("delta").load("s3a://gold/field_performance_ranking/")
+
+# System overview
+overview_data = spark.read.format("delta").load("s3a://gold/dashboard_overview/")
+
+# Alert summary
+alert_data = spark.read.format("delta").load("s3a://gold/alert_summary/")
 ```
 
 ### Query Performance
-- **Partitioning**: Ottimizzato per query temporali e geografiche
-- **Indexing**: Z-ordering su Delta tables per query multi-dimensionali
-- **Caching**: Spark cache per tabelle frequentemente accedute
+- **Partitioning**: Optimized for temporal and geographic queries
+- **Indexing**: Z-ordering on Delta tables for multi-dimensional queries
+- **Caching**: Spark cache for frequently accessed tables
 
 ---
 
-## 7. MONITORING E QUALITÀ DATI
+## 6. MONITORING AND DATA QUALITY
 
 ### Data Quality Checks
-- **Bronze**: Monitoring volume dati e lag
-- **Silver**: Validation rules e data profiling
-- **Gold**: Business rules validation e anomaly detection
+- **Bronze**: Data volume monitoring and lag
+- **Silver**: Validation rules and data profiling
+- **Gold**: Business rules validation and anomaly detection
 
 ### Metrics
 - **Throughput**: Records/second per source
 - **Latency**: End-to-end processing time
 - **Quality**: % records passed validation
-- **Availability**: Uptime servizi e data freshness
+- **Availability**: Service uptime and data freshness
 
 ---
 
-## 8. SICUREZZA E GOVERNANCE
-
-### Access Control
-- **Bronze**: Read-only per data engineers
-- **Silver**: Read-write per data scientists  
-- **Gold**: Read access per ML models e dashboard
-
-### Data Lineage
-- **Tracking**: Spark history server + Delta Lake transaction logs
-- **Auditing**: Full traceability da source a consumption
+## 7. SECURITY AND GOVERNANCE
 
 ### Backup & Recovery
-- **Versioning**: Delta Lake time travel capabilities
 - **Disaster Recovery**: MinIO replication + Spark checkpointing
 
-Questa architettura garantisce **scalabilità**, **affidabilità** e **performance** per il sistema di monitoraggio agricolo, supportando sia analisi real-time che batch processing per la prevenzione delle malattie delle colture. 
+This architecture ensures **scalability**, **reliability**, and **performance** for the agricultural monitoring system, supporting both real-time analysis and batch processing for crop disease prevention. 
