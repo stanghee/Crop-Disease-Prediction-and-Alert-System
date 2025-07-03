@@ -30,7 +30,7 @@ logger.info(f"🚀 Weather producer starting up with timezone {TIMEZONE}...")
 
 # === Check API_KEY ===
 if not API_KEY:
-    logger.error("❌ API_KEY non trovato! Assicurati che sia presente nel file .env o nelle variabili d'ambiente.")
+    logger.error("❌ API_KEY not found! Make sure it's present in the .env file or environment variables.")
     sys.exit(1)
 
 # Kafka Producer
@@ -48,11 +48,11 @@ def fetch_weather_data(location):
         }
         response = requests.get(API_URL, params=params)
         if response.status_code != 200:
-            logger.error(f"❌ Errore API: {response.status_code} - {response.text}")
+            logger.error(f"❌ API Error: {response.status_code} - {response.text}")
             return None
         return response.json()
     except requests.RequestException as e:
-        logger.error(f"❌ Errore nella richiesta all'API: {e}")
+        logger.error(f"❌ API Request Error: {e}")
         return None
 
 def prepare_raw_data(data):
@@ -81,7 +81,7 @@ def prepare_raw_data(data):
         }
 
     except Exception as e:
-        logger.error(f"❌ Errore durante la preparazione dei dati: {e}")
+        logger.error(f"❌ Error preparing data: {e}")
         return None
 
 # Main loop
@@ -90,13 +90,13 @@ while True:
     if raw_data:
         prepared_data = prepare_raw_data(raw_data)
         if prepared_data:
-            logger.info(f"✅ Invio dati raw: {prepared_data}")
+            logger.info(f"✅ Sending raw data: {prepared_data}")
             producer.send('weather_data', value=prepared_data)
-            producer.flush()  # Assicura che il messaggio venga inviato immediatamente
+            producer.flush()  # Ensure message is sent immediately
         else:
-            logger.warning("⛔ Errore nella preparazione dei dati.")
+            logger.warning("⛔ Error preparing data.")
     else:
-        logger.error("❌ Nessun dato ricevuto dall'API. Controlla la chiave API, la connessione di rete, o i limiti dell'API.")
+        logger.error("❌ No data received from API. Check API key, network connection, or API limits.")
     time.sleep(60)
 
 

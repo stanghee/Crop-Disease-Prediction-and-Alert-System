@@ -123,7 +123,7 @@ class DataLakeService:
         # Write to Bronze zone as JSON (partitioned by date)
         query = bronze_df.writeStream \
             .format("json") \
-            .option("path", f"{self.bronze_path}sensor_data/") \
+            .option("path", f"{self.bronze_path}iot/") \
             .option("checkpointLocation", "/tmp/checkpoints/bronze_sensor") \
             .partitionBy("source_type") \
             .trigger(processingTime="30 seconds") \
@@ -176,7 +176,7 @@ class DataLakeService:
         
         query = bronze_df.writeStream \
             .format("json") \
-            .option("path", f"{self.bronze_path}weather_data/") \
+            .option("path", f"{self.bronze_path}weather/") \
             .option("checkpointLocation", "/tmp/checkpoints/bronze_weather") \
             .partitionBy("source_type") \
             .trigger(processingTime="30 seconds") \
@@ -261,7 +261,7 @@ class DataLakeService:
         logger.info("Processing Sensor Silver zone...")
         
         # Read from Bronze
-        bronze_df = self.spark.read.json(f"{self.bronze_path}sensor_data/")
+        bronze_df = self.spark.read.json(f"{self.bronze_path}iot/")
         
         # Data validation and cleaning
         silver_df = bronze_df \
@@ -279,14 +279,15 @@ class DataLakeService:
                        col("temperature_anomaly") | col("humidity_anomaly") | col("ph_anomaly")) \
             .filter(col("timestamp_parsed").isNotNull())
         
-        # Write to Silver as Parquet
+        # Write to Silver zone as Parquet
         silver_df.write \
             .mode("overwrite") \
             .format("parquet") \
             .partitionBy("date", "field_id") \
-            .save(f"{self.silver_path}sensor_data/")
+            .save(f"{self.silver_path}iot/")
             
-        logger.info("Sensor Silver processing completed")
+        logger.info(f"Processed {silver_df.count()} sensor records to Silver zone")
+        return silver_df
     
     def process_weather_silver(self):
         """
@@ -297,7 +298,7 @@ class DataLakeService:
         """
         logger.info("Processing Weather Silver zone...")
         
-        bronze_df = self.spark.read.json(f"{self.bronze_path}weather_data/")
+        bronze_df = self.spark.read.json(f"{self.bronze_path}weather/")
         
         silver_df = bronze_df \
             .filter(col("temp_c").isNotNull() & col("humidity").isNotNull()) \
@@ -312,13 +313,15 @@ class DataLakeService:
                        when(col("lat").isNotNull() & col("lon").isNotNull(), True).otherwise(False)) \
             .filter(col("temp_valid") & col("humidity_valid") & col("coordinates_valid"))
         
+        # Write to Silver zone as Parquet
         silver_df.write \
             .mode("overwrite") \
             .format("parquet") \
             .partitionBy("date", "location") \
-            .save(f"{self.silver_path}weather_data/")
+            .save(f"{self.silver_path}weather/")
             
-        logger.info("Weather Silver processing completed")
+        logger.info(f"Processed {silver_df.count()} weather records to Silver zone")
+        return silver_df
     
     def process_satellite_silver(self):
         """
@@ -346,7 +349,7 @@ class DataLakeService:
         """
         logger.info("Processing Sensor Gold zone...")
         
-        silver_df = self.spark.read.parquet(f"{self.silver_path}sensor_data/")
+        silver_df = self.spark.read.parquet(f"{self.silver_path}iot/")
         
         # ML Features
         ml_features = silver_df \
@@ -402,7 +405,7 @@ class DataLakeService:
         """
         logger.info("Processing Weather Gold zone...")
         
-        silver_df = self.spark.read.parquet(f"{self.silver_path}weather_data/")
+        silver_df = self.spark.read.parquet(f"{self.silver_path}weather/")
         
         # Weather aggregations for ML
         weather_features = silver_df \

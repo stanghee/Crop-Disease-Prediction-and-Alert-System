@@ -36,8 +36,8 @@ class GoldZoneProcessor:
         """
         logger.info("Creating sensor ML features for Gold zone...")
         
-        # Read Silver sensor data
-        silver_df = self.spark.read.parquet(f"{self.silver_path}sensor_data/")
+        # Read from Silver zone
+        silver_df = self.spark.read.parquet(f"{self.silver_path}iot/")
         
         # Filter by date if specified (default: last 30 days)
         if batch_date:
@@ -170,10 +170,9 @@ class GoldZoneProcessor:
         """
         logger.info("Creating sensor dashboard KPIs for Gold zone...")
         
-        # Read Silver sensor data (last 7 days)
-        cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-        silver_df = self.spark.read.parquet(f"{self.silver_path}sensor_data/") \
-            .filter(col("date") >= cutoff_date)
+        # Read from Silver zone
+        silver_df = self.spark.read.parquet(f"{self.silver_path}iot/") \
+            .filter(col("date") >= date_7d_ago)
         
         # Latest readings per field
         window_latest = Window.partitionBy("field_id").orderBy(desc("timestamp_parsed"))
@@ -279,8 +278,8 @@ class GoldZoneProcessor:
         """
         logger.info("Creating weather ML features for Gold zone...")
         
-        # Read Silver weather data
-        silver_df = self.spark.read.parquet(f"{self.silver_path}weather_data/")
+        # Read from Silver zone
+        silver_df = self.spark.read.parquet(f"{self.silver_path}weather/")
         
         # Filter by date if specified
         if batch_date:

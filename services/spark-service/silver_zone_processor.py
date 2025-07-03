@@ -118,7 +118,7 @@ class SilverZoneProcessor:
         # Add statistical features using window functions
         window_spec = Window.partitionBy("field_id").orderBy("timestamp_parsed") \
                            .rowsBetween(-5, 0)  # Rolling window of last 6 readings
-                           # TODO: we have to review this, here (in silver layer) we have to collect all cleaned data 
+                           # TODO: Review this approach - in the silver layer we should collect all cleaned data without windowing
         
         silver_df = silver_df \
             .withColumn("temp_rolling_avg", avg("temperature").over(window_spec)) \
@@ -135,13 +135,13 @@ class SilverZoneProcessor:
             )
         
         # Write to Silver zone as Parquet
-        # TODO: we have to review this, here (in silver layer) we have to collect all cleaned data and not only the last 6 readings overvriting the data
+        # TODO: Review this approach - in the silver layer we should collect all cleaned data and not overwrite with just the last 6 readings
         silver_df.write \
             .mode("overwrite") \
             .format("parquet") \
             .partitionBy("date", "field_id") \
             .option("compression", "snappy") \
-            .save(f"{self.silver_path}sensor_data/")
+            .save(f"{self.silver_path}iot/")
         
         logger.info(f"Processed {silver_df.count()} sensor records to Silver zone")
         return silver_df
@@ -149,9 +149,9 @@ class SilverZoneProcessor:
     def process_weather_data(self, batch_date: Optional[str] = None) -> DataFrame:
         """
         Silver processing for weather data
-        - Data validation and type conversion
+        - Data validation and cleaning
         - Geospatial validation
-        - Weather pattern analysis
+        - Save as Parquet
         """
         logger.info("Processing weather data for Silver zone...")
         
@@ -300,7 +300,7 @@ class SilverZoneProcessor:
             .format("parquet") \
             .partitionBy("date", "location") \
             .option("compression", "snappy") \
-            .save(f"{self.silver_path}weather_data/")
+            .save(f"{self.silver_path}weather/")
         
         logger.info(f"Processed {silver_df.count()} weather records to Silver zone")
         return silver_df
@@ -411,8 +411,7 @@ class SilverZoneProcessor:
             .mode("overwrite") \
             .format("parquet") \
             .partitionBy("date") \
-            .option("compression", "snappy") \
-            .save(f"{self.silver_path}satellite_data/")
+            .save(f"{self.silver_path}satellite/")
         
         logger.info(f"Processed {silver_df.count()} satellite records to Silver zone")
         return silver_df
@@ -455,7 +454,7 @@ class SilverZoneProcessor:
         
         try:
             # Sensor data quality
-            sensor_df = self.spark.read.parquet(f"{self.silver_path}sensor_data/")
+            sensor_df = self.spark.read.parquet(f"{self.silver_path}iot/")
             if batch_date:
                 sensor_df = sensor_df.filter(col("date") == batch_date)
             
@@ -473,7 +472,7 @@ class SilverZoneProcessor:
             }
             
             # Weather data quality
-            weather_df = self.spark.read.parquet(f"{self.silver_path}weather_data/")
+            weather_df = self.spark.read.parquet(f"{self.silver_path}weather/")
             if batch_date:
                 weather_df = weather_df.filter(col("date") == batch_date)
             
@@ -490,7 +489,7 @@ class SilverZoneProcessor:
             }
             
             # Satellite data quality
-            satellite_df = self.spark.read.parquet(f"{self.silver_path}satellite_data/")
+            satellite_df = self.spark.read.parquet(f"{self.silver_path}satellite/")
             if batch_date:
                 satellite_df = satellite_df.filter(col("date") == batch_date)
             
