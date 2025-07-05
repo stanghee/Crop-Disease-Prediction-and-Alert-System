@@ -33,10 +33,10 @@ def test_gold_processing():
         # Create Gold processor
         gold_processor = GoldZoneProcessor(spark)
         
-        # Test real-time metrics creation
-        print("Testing real-time metrics creation...")
-        realtime_df = gold_processor.create_realtime_metrics()
-        print(f"✅ Real-time metrics created: {realtime_df.count()} records")
+        # Test recent metrics creation
+        print("Testing recent metrics creation...")
+        recent_df = gold_processor.create_sensor_recent_metrics()
+        print(f"✅ Recent metrics created: {recent_df.count()} records")
         
         # Test hourly aggregations
         print("Testing hourly aggregations...")

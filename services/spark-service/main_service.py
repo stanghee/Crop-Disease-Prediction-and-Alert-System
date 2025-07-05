@@ -142,6 +142,33 @@ class MainDataLakeService:
             raise
         return queries
     
+    def run_gold_processing(self) -> Dict[str, Any]:
+        """
+        Run Gold zone processing - dashboard metrics and ML features
+        """
+        logger.info("Starting Gold zone processing...")
+        
+        try:
+            # Run comprehensive Gold processing
+            results = self.gold_processor.run_all_gold_processing()
+            
+            logger.info(f"Gold processing completed: {results}")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error in Gold processing: {e}")
+            return {"error": str(e), "timestamp": datetime.now().isoformat()}
+    
+    def get_dashboard_summary(self) -> Dict[str, Any]:
+        """
+        Get dashboard summary with all metrics
+        """
+        try:
+            return self.gold_processor.get_dashboard_summary()
+        except Exception as e:
+            logger.error(f"Error getting dashboard summary: {e}")
+            return {"error": str(e)}
+    
     def get_system_status(self) -> Dict[str, Any]:
         """Get overall system status"""
         # Get actual active streams from Spark
@@ -159,6 +186,10 @@ class MainDataLakeService:
         # Gold processor status
         try:
             status["gold_processor"] = "available"
+            # Add last processing info if available
+            dashboard_summary = self.get_dashboard_summary()
+            if "error" not in dashboard_summary:
+                status["gold_last_processed"] = dashboard_summary.get("generated_at", "unknown")
         except Exception as e:
             logger.error(f"Error getting Gold processor status: {e}")
             status["error"] = str(e)
@@ -238,6 +269,48 @@ def run_silver_streaming_worker(service: MainDataLakeService):
     else:
         logger.info("Silver streaming worker stopped")
 
+def run_gold_processing_worker(service: MainDataLakeService):
+    """
+    Worker for Gold zone processing. Runs periodically to process dashboard metrics and ML features.
+    """
+    logger.info("Starting Gold zone processing worker...")
+    
+    # Wait for initial data to be available (2 minutes after startup)
+    logger.info("Waiting for initial data to be available...")
+    time.sleep(120)
+    
+    # Gold processing interval - every 10 minutes
+    gold_processing_interval = 600
+    last_processing_time = 0
+    
+    while service.is_running:
+        try:
+            current_time = time.time()
+            
+            # Check if it's time to run Gold processing
+            if current_time - last_processing_time >= gold_processing_interval:
+                logger.info("Starting Gold zone processing cycle...")
+                
+                # Run Gold processing
+                results = service.run_gold_processing()
+                
+                if "error" not in results:
+                    logger.info(f"Gold processing completed successfully: {results}")
+                    last_processing_time = current_time
+                else:
+                    logger.error(f"Gold processing failed: {results}")
+                    # Still update time to prevent rapid retries
+                    last_processing_time = current_time
+            
+            # Sleep for 1 minute before next check
+            time.sleep(60)
+            
+        except Exception as e:
+            logger.error(f"Error in Gold processing worker: {e}")
+            time.sleep(60)
+    
+    logger.info("Gold processing worker stopped")
+
 def main():
     """Main entry point"""
     logger.info("Starting Crop Disease Data Lake Service...")
@@ -258,6 +331,16 @@ def main():
             daemon=True
         )
         silver_thread.start()
+
+        # Start Gold processing in its own thread
+        gold_thread = threading.Thread(
+            target=run_gold_processing_worker,
+            args=(service,),
+            daemon=True
+        )
+        gold_thread.start()
+
+        logger.info("All workers started: Bronze streaming, Silver streaming, Gold processing")
 
         # Main monitoring loop
         while True:
