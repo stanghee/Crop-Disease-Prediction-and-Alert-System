@@ -5,10 +5,43 @@
 The pipeline implements a **3-zone Data Lake structure** (Bronze, Silver, Gold) following the **Delta Lake** methodology to ensure ACID transactions, schema evolution, and time travel capabilities.
 
 ```
-Kafka Topics → Bronze Zone → Silver Zone → Gold Zone → Dashboard
-     ↓              ↓             ↓            ↓
-Raw Data    Immutable Raw   Validated &   Dashboard KPIs
-            + Metadata      Cleaned       
+Kafka Topics → Bronze Zone → Silver Zone → Gold Zone → ML Service → Hybrid Storage
+     ↓              ↓             ↓            ↓           ↓
+Raw Data    Immutable Raw   Validated &   Dashboard KPIs  ML Predictions
+            + Metadata      Cleaned                       & Alerts
+```
+
+## Hybrid Storage Architecture
+
+The system implements a **hybrid storage strategy** combining MinIO (S3) and PostgreSQL for optimal performance:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    ML DATA STORAGE                          │
+│                                                             │
+│  ┌─────────────────┐              ┌─────────────────┐      │
+│  │   MINIO (S3)    │              │   POSTGRESQL    │      │
+│  │                 │              │                 │      │
+│  │ • ML Models     │              │ • Real-time     │      │
+│  │ • Training Data │              │   Predictions   │      │
+│  │ • Batch Results │              │ • Alerts        │      │
+│  │ • Historical    │              │ • User Data     │      │
+│  │   Analytics     │              │ • Dashboard     │      │
+│  │ • Large Files   │              │   Data          │      │
+│  └─────────────────┘              └─────────────────┘      │
+│           │                               │                │
+│           └───────────────┬───────────────┘                │
+│                           ▼                                │
+│              ┌─────────────────────────┐                   │
+│              │    ML SERVICE           │                   │
+│              │   (Data Sync)           │                   │
+│              │                         │                   │
+│              │ • Orchestrates storage  │                   │
+│              │ • Syncs data between    │                   │
+│              │   MinIO and PostgreSQL  │                   │
+│              │ • Manages data lifecycle│                   │
+│              └─────────────────────────┘                   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Zone Structure
@@ -346,4 +379,117 @@ alert_data = spark.read.format("delta").load("s3a://gold/alert_summary/")
 ### Backup & Recovery
 - **Disaster Recovery**: MinIO replication + Spark checkpointing
 
-This architecture ensures **scalability**, **reliability**, and **performance** for the agricultural monitoring system, supporting both real-time analysis and batch processing for crop disease prevention. 
+---
+
+## 8. HYBRID STORAGE INFRASTRUCTURE
+
+### Storage Architecture
+The system implements a **hybrid storage strategy** combining MinIO (S3) and PostgreSQL:
+
+#### **Storage Strategy**
+```
+Gold Zone Data → Data Sync Service → Hybrid Storage (MinIO + PostgreSQL)
+```
+
+#### **Data Flow**
+1. **Gold Zone Processing**: ML features generated in Gold zone
+2. **Data Sync**: Synchronization between MinIO and PostgreSQL
+3. **Storage Distribution**: Optimal storage based on data type
+4. **Backup Strategy**: Parallel storage for redundancy
+
+#### **Data Types Stored**
+- **ML Features**: Sensor and weather features from Gold zone
+- **Training Data**: Historical data for future ML models
+- **Analytics Data**: Large datasets for trend analysis
+
+### Database Schema
+
+#### **ML Predictions Table**
+```sql
+CREATE TABLE ml_predictions (
+    id SERIAL PRIMARY KEY,
+    field_id VARCHAR(50) NOT NULL,
+    prediction_timestamp TIMESTAMP WITH TIME ZONE,
+    disease_probability DECIMAL(5,4),
+    disease_type VARCHAR(100),
+    confidence_score DECIMAL(5,4),
+    risk_level VARCHAR(20),
+    -- Input features
+    avg_temperature DECIMAL(5,2),
+    avg_humidity DECIMAL(5,2),
+    avg_soil_ph DECIMAL(4,2),
+    -- Model metadata
+    model_version VARCHAR(50),
+    model_type VARCHAR(50),
+    created_at TIMESTAMP WITH TIME ZONE
+);
+```
+
+#### **Alerts Table**
+```sql
+CREATE TABLE alerts (
+    id SERIAL PRIMARY KEY,
+    field_id VARCHAR(50) NOT NULL,
+    alert_timestamp TIMESTAMP WITH TIME ZONE,
+    alert_type VARCHAR(50),
+    severity VARCHAR(20),
+    message TEXT,
+    details JSONB,
+    status VARCHAR(20),
+    created_at TIMESTAMP WITH TIME ZONE
+);
+```
+
+#### **User Preferences Table**
+```sql
+CREATE TABLE user_preferences (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(100) UNIQUE,
+    username VARCHAR(100),
+    email VARCHAR(255),
+    alert_frequency VARCHAR(20),
+    min_severity VARCHAR(20),
+    created_at TIMESTAMP WITH TIME ZONE
+);
+```
+
+### Data Sync Strategy
+
+#### **Real-time Sync**
+- **ML Predictions**: Immediate sync to PostgreSQL for dashboard access
+- **Alerts**: Real-time alert generation and storage
+- **Backup**: Parallel storage to MinIO for analytics
+
+#### **Batch Sync**
+- **Historical Data**: Periodic sync of Gold zone data to PostgreSQL
+- **Training Data**: Batch processing for model retraining
+- **Analytics**: Large dataset processing for trend analysis
+
+#### **Sync Monitoring**
+- **Sync Logs**: Comprehensive logging of all sync activities
+- **Performance Metrics**: Sync duration, success rates, error tracking
+- **Data Consistency**: Validation between MinIO and PostgreSQL
+
+### Data Sync Management
+
+#### **Sync Lifecycle**
+1. **Real-time Sync**: Immediate synchronization of critical data
+2. **Batch Sync**: Periodic synchronization of historical data
+3. **Monitoring**: Sync performance and error tracking
+4. **Recovery**: Automatic retry and error handling
+
+#### **Storage Distribution**
+- **MinIO**: Large files, ML models, historical data, analytics
+- **PostgreSQL**: Real-time data, user preferences, alerts, metadata
+- **Backup**: Parallel storage for data redundancy
+
+---
+
+## 9. SECURITY AND GOVERNANCE
+
+### Backup & Recovery
+- **Disaster Recovery**: MinIO replication + PostgreSQL backups
+- **Data Consistency**: ACID transactions with Delta Lake
+- **Sync Monitoring**: Comprehensive sync activity logging
+
+This architecture ensures **scalability**, **reliability**, and **performance** for the agricultural monitoring system, supporting both real-time analysis and batch processing for crop disease prevention with advanced ML capabilities. 

@@ -412,45 +412,7 @@ class GoldZoneProcessor:
             ])
             return self.spark.createDataFrame([], schema)
     
-    # overview for weather metrics of all locations (we have suppose that we near locations)
-    def create_weather_overview(self) -> DataFrame:
-        """
-        Create weather overview metrics
-        """
-        logger.info("Creating weather overview for Gold zone...")
-        
-        try:
-            monthly_df = self.spark.read.format("delta").load(f"{self.gold_path}weather_metrics/monthly_stats/")
-            
-            # Calculate overview metrics
-            overview_stats = monthly_df.agg(
-                countDistinct("location").alias("total_locations"),
-                avg("avg_temperature").alias("avg_temperature_overall"),
-                avg("avg_humidity").alias("avg_humidity_overall"),
-                avg("avg_wind_speed").alias("avg_wind_speed_overall"),
-                avg("avg_uv_index").alias("avg_uv_index_overall"),
-                count("*").alias("total_monthly_records")
-            ) \
-            .withColumn("created_at", current_timestamp())
-            
-            # Write to organized Gold zone path
-            overview_stats.write \
-                .format("delta") \
-                .mode("overwrite") \
-                .option("mergeSchema", "true") \
-                .save(f"{self.gold_path}weather_metrics/overview/")
-            
-            logger.info(f"Created weather overview record")
-            return overview_stats
-            
-        except Exception as e:
-            logger.warning(f"Weather overview creation failed: {e}")
-            # Return empty DataFrame
-            schema = StructType([
-                StructField("total_locations", LongType(), True),
-                StructField("created_at", TimestampType(), True)
-            ])
-            return self.spark.createDataFrame([], schema)
+
     
     # =================== ML FEATURES ===================
     
@@ -733,9 +695,6 @@ class GoldZoneProcessor:
             monthly_df = self.create_weather_monthly_stats()
             results["weather_monthly_count"] = monthly_df.count()
             
-            overview_df = self.create_weather_overview()
-            results["weather_overview_count"] = overview_df.count()
-            
             logger.info("Weather metrics processing completed successfully")
             return results
             
@@ -866,21 +825,7 @@ class GoldZoneProcessor:
                 logger.warning(f"Could not load performance summary: {e}")
                 summary["performance"] = {"error": "No performance data available"}
             
-            # Weather summary
-            try:
-                weather_overview_df = self.spark.read.format("delta").load(f"{self.gold_path}weather_metrics/overview/")
-                weather_summary = weather_overview_df.collect()[0]
-                
-                summary["weather"] = {
-                    "total_locations": int(weather_summary.total_locations or 0),
-                    "avg_temperature": float(weather_summary.avg_temperature_overall or 0),
-                    "avg_humidity": float(weather_summary.avg_humidity_overall or 0),
-                    "avg_wind_speed": float(weather_summary.avg_wind_speed_overall or 0),
-                    "avg_uv_index": float(weather_summary.avg_uv_index_overall or 0)
-                }
-            except Exception as e:
-                logger.warning(f"Could not load weather summary: {e}")
-                summary["weather"] = {"error": "No weather data available"}
+
             
             # ML features summary
             try:
