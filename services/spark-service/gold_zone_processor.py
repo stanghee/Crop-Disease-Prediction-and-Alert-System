@@ -599,10 +599,10 @@ class GoldZoneProcessor:
                 .select(
                     col("s.*"),
                     # Weather features
-                    col("w.avg_temperature").alias("weather_avg_temp"),
+                    col("w.avg_temperature").alias("weather_avg_temperature"),
                     col("w.avg_humidity").alias("weather_avg_humidity"),
-                    col("w.avg_wind_speed"),
-                    col("w.avg_uv_index"),
+                    col("w.avg_wind_speed").alias("weather_avg_wind_speed"),
+                    col("w.avg_uv_index").alias("weather_avg_uv_index"),
                     col("w.temperature_range").alias("weather_temp_range"),
                     col("w.humidity_range").alias("weather_humidity_range"),
                     col("w.dominant_condition"),
@@ -612,7 +612,7 @@ class GoldZoneProcessor:
                 .withColumn(
                     # Correlation features
                     "temp_differential", 
-                    abs(col("avg_temperature") - col("weather_avg_temp"))
+                    abs(col("avg_temperature") - col("weather_avg_temperature"))
                 ) \
                 .withColumn(
                     "humidity_differential",
