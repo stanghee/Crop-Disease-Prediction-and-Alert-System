@@ -6,19 +6,92 @@ The Crop Disease Service implements the **Dual-Mode Architecture** for crop dise
 
 ## Dual-Mode Architecture
 
-### Mode 1: Real-time Processing (Every 5 minutes)
-- **Purpose**: Immediate insights and current status
-- **Frequency**: Every 5 minutes
-- **Output**: Current analysis, guidance, live dashboard updates
-- **Storage**: PostgreSQL (fast queries)
-- **Data Source**: Gold zone sensor data only (no weather features for ML)
+The system implements a **dual-mode architecture** that combines **real-time monitoring** and **ML batch analysis** to provide comprehensive crop disease risk coverage.
 
-### Mode 2: Batch Processing (Every 6 hours)
-- **Purpose**: ML predictions and strategic alerts
-- **Frequency**: Every 6 hours
-- **Output**: Disease predictions, economic impact analysis, strategic recommendations
-- **Storage**: PostgreSQL (long-term, queryable)
-- **Data Source**: Gold zone ML features (includes weather features)
+### 🔄 Mode 1: Real-time Processing (Every 5 minutes)
+
+**Purpose**: Immediate monitoring and rapid response
+- **Frequency**: Every 5 minutes (288 times per day)
+- **Speed**: < 30 seconds processing time
+- **Data**: Sensor data only from Gold zone (temperature, humidity, pH)
+- **Logic**: Simple threshold-based rules
+- **Output**: 
+  - Current condition analysis
+  - Immediate guidance for operators
+  - Live dashboard updates
+  - `SENSOR_ANOMALY` alerts
+- **Storage**: PostgreSQL for fast access
+- **Use**: Daily operational monitoring
+
+**Real-time output example**:
+```json
+{
+  "field_id": "field_02",
+  "current_risk": "MEDIUM",
+  "message": "High humidity detected (88%). Monitor for next 2 hours",
+  "immediate_action": "Check leaves for wetness"
+}
+```
+
+### 🤖 Mode 2: Batch Processing (Every 6 hours)
+
+**Purpose**: Strategic ML predictions and economic analysis
+- **Frequency**: Every 6 hours (00:00, 06:00, 12:00, 18:00)
+- **Speed**: ~30 minutes processing time
+- **Data**: Complete ML features from Gold zone (includes weather data)
+- **Logic**: Random Forest model with economic analysis
+- **Output**:
+  - 7-day disease predictions
+  - Economic impact analysis
+  - Strategic recommendations
+  - `DISEASE_DETECTED` alerts
+- **Storage**: PostgreSQL for historical analysis
+- **Use**: Strategic planning and business decisions
+
+**Batch output example**:
+```json
+{
+  "field_id": "field_02",
+  "disease_risk_7_days": "HIGH",
+  "probability": 0.78,
+  "economic_impact": {
+    "potential_loss": "€1,200",
+    "treatment_cost": "€200",
+    "roi": "€1,000 savings"
+  },
+  "recommendation": "Preventive treatment within 48 hours"
+}
+```
+
+### 🌦️ Weather Alerts (When needed)
+
+**Purpose**: Specific alerts for adverse weather conditions
+- **Frequency**: When critical conditions are detected
+- **Data**: Weather data from Silver zone
+- **Logic**: Weather threshold-based rules
+- **Output**: `WEATHER_ALERT` alerts
+- **Use**: Crop protection from weather events
+
+### 📊 Mode Comparison
+
+| Aspect | Real-time (5 min) | Batch (6 hours) | Weather |
+|--------|------------------|-----------------|---------|
+| **Frequency** | Every 5 minutes | Every 6 hours | When needed |
+| **Speed** | < 30 seconds | ~30 minutes | < 1 minute |
+| **Data** | Sensors only | Complete ML features | Weather only |
+| **Logic** | Simple rules | ML Random Forest | Weather thresholds |
+| **Purpose** | Immediate monitoring | Strategic predictions | Crop protection |
+| **Alert Type** | `SENSOR_ANOMALY` | `DISEASE_DETECTED` | `WEATHER_ALERT` |
+| **Use** | Operational | Strategic | Emergency |
+
+### 🔄 Mode Integration
+
+The three modes work in synergy:
+- **Real-time** provides continuous monitoring and immediate response
+- **Batch** provides in-depth analysis and strategic planning
+- **Weather** provides protection from environmental events
+- All alerts are stored in PostgreSQL for unified access
+- Dashboard displays all 3 alert types in real-time
 
 ## Data Flow Architecture
 
