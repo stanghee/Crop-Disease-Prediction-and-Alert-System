@@ -160,169 +160,68 @@ class AlertGenerator:
             return self._fallback_alert(field_id, prediction)
     
     def generate_threshold_alert(self, alert_type: str, data: Dict[str, Any], field_id: str = None) -> Dict[str, Any]:
-        """Generate threshold-based alert (sensor or weather)"""
+        """Generate threshold-based alert (weather only - sensor alerts now use Silver layer)"""
         
         if not self.is_initialized:
             raise RuntimeError("Alert Generator not initialized")
         
         try:
-            if alert_type == "SENSOR_ANOMALY":
-                return self._generate_sensor_alert(data, field_id)
-            elif alert_type == "WEATHER_ALERT":
+            if alert_type == "WEATHER_ALERT":
                 return self._generate_weather_alert(data)
             else:
-                raise ValueError(f"Unknown alert type: {alert_type}")
+                raise ValueError(f"Unknown alert type: {alert_type}. Sensor alerts now use Silver layer directly.")
                 
         except Exception as e:
             logger.error(f"Error generating threshold alert: {e}")
             return None
     
-    def _generate_sensor_alert(self, sensor_data: Dict[str, Any], field_id: str) -> Dict[str, Any]:
-        """Generate sensor-based threshold alert"""
-        
-        # Calculate risk based on sensor thresholds
-        risk_level = self._calculate_sensor_risk(sensor_data)
-        
-        alert = {
-            'field_id': field_id,
-            'alert_timestamp': datetime.now().isoformat(),
-            'alert_type': 'SENSOR_ANOMALY',
-            'severity': risk_level,
-            'prediction_id': None,
-            'status': 'ACTIVE',
-            'message': self._generate_sensor_message(risk_level, sensor_data),
-            'details': {
-                'current_conditions': sensor_data,
-                'alert_source': 'sensor_threshold',
-                'economic_impact': self._calculate_sensor_economic_impact(risk_level),
-                'recommendations': self._get_sensor_recommendations(risk_level),
-                'alert_priority': risk_level
-            }
-        }
-        
-        return alert
+
     
     def _generate_weather_alert(self, weather_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate weather-based threshold alert"""
+        """Generate weather-based threshold alert with risk levels"""
         
         alert_type = weather_data.get('type', 'UNKNOWN')
-        severity = weather_data.get('severity', 'WARNING')
+        risk_level = weather_data.get('risk_level', 'MEDIUM')
         message = weather_data.get('message', 'Weather condition detected')
         location = weather_data.get('location', 'Unknown')
+        value = weather_data.get('value', 0)
+        threshold = weather_data.get('threshold', 0)
         
         alert = {
             'field_id': None,  # Weather alerts are regional
             'alert_timestamp': datetime.now().isoformat(),
             'alert_type': 'WEATHER_ALERT',
-            'severity': severity,
+            'severity': risk_level,  # Use risk_level instead of severity
             'prediction_id': None,
             'status': 'ACTIVE',
             'message': message,
             'details': {
                 'weather_condition': alert_type,
                 'location': location,
+                'current_value': value,
+                'threshold_value': threshold,
                 'alert_source': 'weather_threshold',
-                'recommendations': self._get_weather_recommendations(alert_type),
-                'alert_priority': severity
+                'economic_impact': self._calculate_weather_economic_impact(risk_level, alert_type),
+                'recommendations': self._get_weather_recommendations(alert_type, risk_level),
+                'alert_priority': risk_level
             }
         }
         
+        logger.info(f"Generated weather alert: {alert_type} at {location} with risk level {risk_level}")
         return alert
     
-    def _calculate_sensor_risk(self, sensor_data: Dict[str, Any]) -> str:
-        """Calculate risk level based on sensor thresholds"""
-        
-        risk_score = 0
-        temp = sensor_data.get('temperature', 0)
-        humidity = sensor_data.get('humidity', 0)
-        soil_ph = sensor_data.get('soil_ph', 7.0)
-        
-        # Temperature risk (20-25°C is optimal for many diseases)
-        if 20 <= temp <= 25:
-            risk_score += 2
-        elif 18 <= temp <= 27:
-            risk_score += 1
-        
-        # Humidity risk (high humidity favors disease)
-        if humidity > 85:
-            risk_score += 3
-        elif humidity > 75:
-            risk_score += 2
-        elif humidity > 65:
-            risk_score += 1
-        
-        # Soil pH risk (neutral pH is generally good)
-        if not (6.0 <= soil_ph <= 7.0):
-            risk_score += 1
-        
-        # Determine risk level
-        if risk_score >= 5:
-            return "HIGH"
-        elif risk_score >= 3:
-            return "MEDIUM"
-        else:
-            return "LOW"
+
     
-    def _generate_sensor_message(self, risk_level: str, sensor_data: Dict[str, Any]) -> str:
-        """Generate sensor alert message"""
-        
-        temp = sensor_data.get('temperature', 0)
-        humidity = sensor_data.get('humidity', 0)
-        
-        if risk_level == "HIGH":
-            return f"High risk conditions detected. Temperature: {temp}°C, Humidity: {humidity}%. Monitor closely for disease symptoms."
-        elif risk_level == "MEDIUM":
-            return f"Moderate risk conditions. Temperature: {temp}°C, Humidity: {humidity}%. Check field in next 2 hours."
-        else:
-            return f"Low risk conditions. Temperature: {temp}°C, Humidity: {humidity}%. No immediate action needed."
+
     
-    def _calculate_sensor_economic_impact(self, risk_level: str) -> Dict[str, Any]:
-        """Calculate economic impact for sensor alerts"""
-        
-        loss_mapping = {
-            'LOW': 50.0,
-            'MEDIUM': 200.0,
-            'HIGH': 500.0,
-            'CRITICAL': 1000.0
-        }
-        
-        potential_loss = loss_mapping.get(risk_level, 100.0)
-        
-        return {
-            'crop_type': 'unknown',
-            'field_size_hectares': 1.0,
-            'potential_loss_euro': potential_loss,
-            'treatment_cost_euro': 100.0,
-            'roi_euro': potential_loss - 100.0,
-            'recommendation': 'Monitor field conditions closely'
-        }
+
     
-    def _get_sensor_recommendations(self, risk_level: str) -> List[str]:
-        """Get recommendations for sensor alerts"""
-        
-        if risk_level == "HIGH":
-            return [
-                "Immediate monitoring required",
-                "Check for disease symptoms",
-                "Prepare treatment plan",
-                "Monitor weather forecast"
-            ]
-        elif risk_level == "MEDIUM":
-            return [
-                "Monitor conditions",
-                "Check field in next 2 hours",
-                "Prepare for potential action"
-            ]
-        else:
-            return [
-                "Continue normal operations",
-                "Maintain regular monitoring schedule"
-            ]
+
     
-    def _get_weather_recommendations(self, weather_type: str) -> List[str]:
-        """Get recommendations for weather alerts"""
+    def _get_weather_recommendations(self, weather_type: str, risk_level: str = 'MEDIUM') -> List[str]:
+        """Get weather-specific recommendations based on risk level"""
         
-        recommendations = {
+        base_recommendations = {
             'HIGH_TEMPERATURE': [
                 "Provide shade if possible",
                 "Increase irrigation",
@@ -350,7 +249,72 @@ class AlertGenerator:
             ]
         }
         
-        return recommendations.get(weather_type, ["Monitor conditions closely"])
+        recommendations = base_recommendations.get(weather_type, ["Monitor conditions closely"])
+        
+        # Add urgency based on risk level
+        if risk_level == 'CRITICAL':
+            recommendations.insert(0, 'IMMEDIATE ACTION REQUIRED')
+            recommendations.insert(1, 'Contact agricultural consultant immediately')
+        elif risk_level == 'HIGH':
+            recommendations.insert(0, 'URGENT ACTION REQUIRED')
+        
+        return recommendations
+    
+    def _calculate_weather_economic_impact(self, risk_level: str, weather_type: str) -> Dict[str, Any]:
+        """Calculate economic impact of weather conditions"""
+        
+        # Base economic impact estimates per hectare
+        base_impacts = {
+            'HIGH_TEMPERATURE': {
+                'LOW': {'potential_loss': '€200', 'treatment_cost': '€50'},
+                'MEDIUM': {'potential_loss': '€500', 'treatment_cost': '€100'},
+                'HIGH': {'potential_loss': '€1,200', 'treatment_cost': '€200'},
+                'CRITICAL': {'potential_loss': '€2,500', 'treatment_cost': '€400'}
+            },
+            'LOW_TEMPERATURE': {
+                'LOW': {'potential_loss': '€150', 'treatment_cost': '€30'},
+                'MEDIUM': {'potential_loss': '€400', 'treatment_cost': '€80'},
+                'HIGH': {'potential_loss': '€1,000', 'treatment_cost': '€150'},
+                'CRITICAL': {'potential_loss': '€2,000', 'treatment_cost': '€300'}
+            },
+            'HIGH_HUMIDITY': {
+                'LOW': {'potential_loss': '€300', 'treatment_cost': '€60'},
+                'MEDIUM': {'potential_loss': '€600', 'treatment_cost': '€120'},
+                'HIGH': {'potential_loss': '€1,500', 'treatment_cost': '€250'},
+                'CRITICAL': {'potential_loss': '€3,000', 'treatment_cost': '€500'}
+            },
+            'LOW_HUMIDITY': {
+                'LOW': {'potential_loss': '€250', 'treatment_cost': '€40'},
+                'MEDIUM': {'potential_loss': '€500', 'treatment_cost': '€100'},
+                'HIGH': {'potential_loss': '€1,200', 'treatment_cost': '€200'},
+                'CRITICAL': {'potential_loss': '€2,500', 'treatment_cost': '€400'}
+            },
+            'HIGH_WIND': {
+                'LOW': {'potential_loss': '€100', 'treatment_cost': '€20'},
+                'MEDIUM': {'potential_loss': '€300', 'treatment_cost': '€60'},
+                'HIGH': {'potential_loss': '€800', 'treatment_cost': '€150'},
+                'CRITICAL': {'potential_loss': '€1,800', 'treatment_cost': '€300'}
+            }
+        }
+        
+        impact = base_impacts.get(weather_type, {}).get(risk_level, {
+            'potential_loss': '€500',
+            'treatment_cost': '€100'
+        })
+        
+        # Calculate ROI
+        potential_loss = impact['potential_loss'].replace('€', '').replace(',', '')
+        treatment_cost = impact['treatment_cost'].replace('€', '').replace(',', '')
+        
+        try:
+            loss_value = float(potential_loss)
+            cost_value = float(treatment_cost)
+            roi = loss_value - cost_value
+            impact['roi'] = f"€{roi:,.0f} savings"
+        except ValueError:
+            impact['roi'] = "€500 savings"
+        
+        return impact
     
     def _generate_alert_message(self, risk_level: str, disease_type: str, probability: float) -> str:
         """Generate alert message"""

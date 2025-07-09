@@ -54,15 +54,20 @@ class GoldZoneProcessor:
         # Latest reading per field
         window_latest = Window.partitionBy("field_id").orderBy(desc("timestamp_parsed"))
         
+        # Get latest values per field using window function
+        latest_values = silver_df \
+            .withColumn("row_number", row_number().over(window_latest)) \
+            .filter(col("row_number") == 1) \
+            .select("field_id", "temperature", "humidity", "soil_ph", "timestamp_parsed") \
+            .withColumnRenamed("temperature", "current_temperature") \
+            .withColumnRenamed("humidity", "current_humidity") \
+            .withColumnRenamed("soil_ph", "current_soil_ph") \
+            .withColumnRenamed("timestamp_parsed", "last_reading_time")
+        
         # 30-minute aggregations per field
         recent_metrics = silver_df \
             .groupBy("field_id") \
             .agg(
-                # Current values (latest)
-                first("temperature").alias("current_temperature"),
-                first("humidity").alias("current_humidity"),
-                first("soil_ph").alias("current_soil_ph"),
-                first("timestamp_parsed").alias("last_reading_time"),
                 
                 # Statistical aggregations
                 avg("temperature").alias("avg_temperature_30min"),
@@ -109,6 +114,10 @@ class GoldZoneProcessor:
                 .when(col("anomaly_rate_30min") > 0.05, "MEDIUM_RISK")
                 .otherwise("HEALTHY")
             ) \
+            .withColumn("created_at", current_timestamp())
+        
+        # Join aggregated metrics with latest values
+        final_metrics = recent_metrics.join(latest_values, "field_id", "inner") \
             .withColumn(
                 "data_freshness_minutes",
                 (unix_timestamp(current_timestamp()) - unix_timestamp(col("last_reading_time"))) / 60
@@ -116,18 +125,17 @@ class GoldZoneProcessor:
             .withColumn(
                 "is_online",
                 when(col("data_freshness_minutes") <= 5, True).otherwise(False)
-            ) \
-            .withColumn("created_at", current_timestamp())
+            )
         
         # Write to organized Gold zone path
-        recent_metrics.write \
+        final_metrics.write \
             .format("delta") \
-            .mode("overwrite") \
+            .mode("append") \
             .option("mergeSchema", "true") \
             .save(f"{self.gold_path}sensor_metrics/recent/")
         
-        logger.info(f"Created {recent_metrics.count()} sensor recent metric records")
-        return recent_metrics
+        logger.info(f"Created {final_metrics.count()} sensor recent metric records")
+        return final_metrics
     
     def create_sensor_hourly_aggregations(self) -> DataFrame:
         """

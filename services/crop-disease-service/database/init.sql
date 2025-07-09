@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS ml_predictions (
 -- =====================================================
 CREATE TABLE IF NOT EXISTS alerts (
     id SERIAL PRIMARY KEY,
-    field_id VARCHAR(50) NOT NULL,
+    zone_id VARCHAR(50) NOT NULL,  -- Contains field_id for sensors, location for weather
     alert_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     alert_type VARCHAR(50) NOT NULL CHECK (alert_type IN ('DISEASE_DETECTED', 'HIGH_RISK', 'DATA_QUALITY', 'SENSOR_ANOMALY', 'WEATHER_ALERT')),
     severity VARCHAR(20) NOT NULL CHECK (severity IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
@@ -170,7 +170,7 @@ CREATE INDEX IF NOT EXISTS idx_ml_predictions_risk_level ON ml_predictions(risk_
 CREATE INDEX IF NOT EXISTS idx_ml_predictions_model_version ON ml_predictions(model_version);
 
 -- Alerts indexes
-CREATE INDEX IF NOT EXISTS idx_alerts_field_id ON alerts(field_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_zone_id ON alerts(zone_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(alert_timestamp);
 CREATE INDEX IF NOT EXISTS idx_alerts_type ON alerts(alert_type);
 CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts(severity);
@@ -213,7 +213,7 @@ ORDER BY prediction_timestamp DESC;
 CREATE OR REPLACE VIEW active_alerts AS
 SELECT 
     a.id,
-    a.field_id,
+    a.zone_id,
     a.alert_timestamp,
     a.alert_type,
     a.severity,

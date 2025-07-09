@@ -41,38 +41,7 @@ class APIService:
     def _setup_routes(self):
         """Setup API routes"""
         
-        # Real-time endpoints
-        @self.router.get("/realtime/status")
-        async def get_realtime_status():
-            """Get real-time processing status"""
-            try:
-                if self.ml_service.last_realtime_analysis:
-                    return {
-                        "status": "success",
-                        "data": self.ml_service.last_realtime_analysis,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                else:
-                    return {
-                        "status": "no_data",
-                        "message": "No real-time analysis available",
-                        "timestamp": datetime.now().isoformat()
-                    }
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
-        
-        @self.router.post("/realtime/process")
-        async def trigger_realtime_processing(background_tasks: BackgroundTasks):
-            """Trigger real-time processing manually"""
-            try:
-                background_tasks.add_task(self.ml_service.process_realtime_data)
-                return {
-                    "status": "success",
-                    "message": "Real-time processing triggered",
-                    "timestamp": datetime.now().isoformat()
-                }
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
+
         
         # Batch endpoints
         @self.router.get("/batch/status")
@@ -211,28 +180,100 @@ class APIService:
         
         @self.router.get("/alerts/weather")
         async def get_weather_alerts():
-            """Get weather-based alerts (simple threshold checks)"""
+            """Get weather-based alerts using refactored centralized system"""
             try:
-                weather_alerts = self.ml_service.data_loader.check_weather_alerts()
-                
-                return {
-                    "status": "success",
-                    "data": {
-                        "weather_alerts": weather_alerts,
-                        "total_alerts": len(weather_alerts)
-                    },
-                    "timestamp": datetime.now().isoformat()
-                }
+                # Use the new centralized alert manager if available
+                if self.ml_service.alert_manager:
+                    # Get weather violations from refactored system
+                    weather_violations = self.ml_service.alert_manager.weather_handler.get_threshold_violations()
+                    
+                    return {
+                        "status": "success",
+                        "data": {
+                            "weather_alerts": [violation.__dict__ for violation in weather_violations],
+                            "total_alerts": len(weather_violations),
+                            "data_source": "refactored_centralized_system"
+                        },
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "message": "Refactored alert system not available",
+                        "data": {
+                            "weather_alerts": [],
+                            "total_alerts": 0,
+                            "data_source": "system_unavailable"
+                        },
+                        "timestamp": datetime.now().isoformat()
+                    }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.router.get("/alerts/sensors")
+        async def get_sensor_alerts():
+            """Get sensor alerts using refactored centralized system"""
+            try:
+                # Use the new centralized alert manager if available
+                if self.ml_service.alert_manager:
+                    # Get sensor violations from refactored system
+                    sensor_violations = self.ml_service.alert_manager.sensor_handler.get_threshold_violations()
+                    
+                    return {
+                        "status": "success",
+                        "data": {
+                            "sensor_alerts": [violation.__dict__ for violation in sensor_violations],
+                            "total_alerts": len(sensor_violations),
+                            "data_source": "refactored_centralized_system"
+                        },
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "message": "Refactored alert system not available",
+                        "data": {
+                            "sensor_alerts": [],
+                            "total_alerts": 0,
+                            "data_source": "system_unavailable"
+                        },
+                        "timestamp": datetime.now().isoformat()
+                    }
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
         
         @self.router.put("/alerts/{alert_id}")
         async def update_alert(alert_id: str, request: AlertUpdateRequest):
-            """Update alert status"""
+            """Update alert status using refactored centralized system"""
             try:
-                result = self.ml_service.alert_generator.update_alert_status(
-                    alert_id, request.new_status, request.user_id
-                )
+                # Use the new centralized alert repository if available
+                if self.ml_service.alert_manager:
+                    success = self.ml_service.alert_manager.alert_repository.update_alert_status(
+                        int(alert_id), request.new_status, request.user_id
+                    )
+                    
+                    if success:
+                        result = {
+                            'alert_id': alert_id,
+                            'new_status': request.new_status,
+                            'updated_by': request.user_id,
+                            'updated_at': datetime.now().isoformat(),
+                            'status': 'success',
+                            'system': 'refactored_centralized'
+                        }
+                    else:
+                        result = {
+                            'alert_id': alert_id,
+                            'status': 'error',
+                            'message': 'Failed to update alert status',
+                            'system': 'refactored_centralized'
+                        }
+                else:
+                    # Fallback to old system
+                    result = self.ml_service.alert_generator.update_alert_status(
+                        alert_id, request.new_status, request.user_id
+                    )
+                    result['system'] = 'legacy'
                 
                 return {
                     "status": "success",
@@ -242,6 +283,70 @@ class APIService:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
         
+        # Refactored Alert System endpoints
+        @self.router.get("/alerts/statistics")
+        async def get_alert_statistics():
+            """Get alert statistics from refactored system"""
+            try:
+                if self.ml_service.alert_manager:
+                    stats = self.ml_service.alert_manager.alert_repository.get_alert_statistics()
+                    return {
+                        "status": "success",
+                        "data": stats,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "message": "Refactored alert system not available",
+                        "timestamp": datetime.now().isoformat()
+                    }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.router.get("/alerts/configuration")
+        async def get_alert_configuration():
+            """Get alert configuration information"""
+            try:
+                if self.ml_service.alert_manager:
+                    config_info = self.ml_service.alert_manager.alert_factory.get_configuration_info()
+                    return {
+                        "status": "success",
+                        "data": config_info,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "message": "Refactored alert system not available",
+                        "timestamp": datetime.now().isoformat()
+                    }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.router.post("/alerts/cleanup")
+        async def cleanup_old_alerts(days_old: int = 30):
+            """Clean up old alerts"""
+            try:
+                if self.ml_service.alert_manager:
+                    deleted_count = self.ml_service.alert_manager.alert_repository.cleanup_old_alerts(days_old)
+                    return {
+                        "status": "success",
+                        "data": {
+                            "deleted_alerts": deleted_count,
+                            "days_old": days_old
+                        },
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "message": "Refactored alert system not available",
+                        "timestamp": datetime.now().isoformat()
+                    }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
         # Models endpoints
         @self.router.get("/models")
         async def get_models():

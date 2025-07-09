@@ -16,9 +16,9 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, avg, stddev, count, when
 
 # Import ML components
-from models.disease_predictor import DiseasePredictor
-from models.alert_generator import AlertGenerator
-from data.data_loader import DataLoader
+from .models.disease_predictor import DiseasePredictor
+from .models.alert_generator import AlertGenerator
+from .data_loading.data_loader import DataLoader
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +40,18 @@ class MLService:
         
         # Service state
         self.last_batch_prediction = None
-        self.last_realtime_analysis = None
         self.is_initialized = False
+        
+        # Alert manager (set by orchestrator after initialization)
+        self.alert_manager = None
         
         # Initialize models
         self._initialize_models()
+    
+    def set_alert_manager(self, alert_manager):
+        """Set the alert manager for real-time alert system integration"""
+        self.alert_manager = alert_manager
+        logger.info("Alert manager connected to ML service")
     
     def _create_spark_session(self) -> SparkSession:
         """Create Spark session for ML processing"""
@@ -80,231 +87,20 @@ class MLService:
             logger.error(f"Error initializing models: {e}")
             raise
     
-    def process_realtime_data(self) -> Dict[str, Any]:
-        """
-        Real-time processing (Mode 1): Every 5 minutes
-        Purpose: Immediate insights and current status
-        """
-        start_time = time.time()
-        
-        try:
-            logger.info("Starting real-time data processing...")
-            
-            # Load current sensor data from Gold zone (for ML analysis)
-            current_data = self.data_loader.load_realtime_data()
-            
-            # Check weather alerts separately (simple threshold-based)
-            weather_data = self.data_loader.check_weather_alerts()
-            
-            # Convert weather data to alerts using unified alert generator
-            weather_alerts = []
-            for weather_condition in weather_data:
-                weather_alert = self.alert_generator.generate_threshold_alert(
-                    "WEATHER_ALERT", weather_condition
-                )
-                if weather_alert:
-                    weather_alerts.append(weather_alert)
-            
-            if current_data.empty:
-                logger.warning("No real-time sensor data available")
-                return {
-                    "status": "no_sensor_data", 
-                    "timestamp": datetime.now().isoformat(),
-                    "weather_alerts": weather_alerts
-                }
-            
-            # Process each field for sensor analysis
-            results = []
-            sensor_alerts = []
-            
-            for field_id in current_data['field_id'].unique():
-                field_data = current_data[current_data['field_id'] == field_id]
-                
-                # Real-time sensor analysis based on sensor data only
-                analysis = self._analyze_realtime_field(field_data, field_id)
-                results.append(analysis)
-                
-                # Generate sensor alert using unified alert generator
-                sensor_data = analysis['current_data']
-                sensor_alert = self.alert_generator.generate_threshold_alert(
-                    "SENSOR_ANOMALY", sensor_data, field_id
-                )
-                if sensor_alert:
-                    sensor_alerts.append(sensor_alert)
-            
-            # Save all threshold-based alerts to database
-            all_threshold_alerts = sensor_alerts + weather_alerts
-            if all_threshold_alerts:
-                self._save_realtime_alerts(all_threshold_alerts)
-            
-            # Update service state
-            self.last_realtime_analysis = {
-                "timestamp": datetime.now().isoformat(),
-                "fields_processed": len(results),
-                "weather_alerts": weather_alerts,
-                "sensor_alerts_generated": len(sensor_alerts),
-                "processing_time_ms": int((time.time() - start_time) * 1000),
-                "results": results
-            }
-            
-            logger.info(f"Real-time processing completed: {len(results)} fields processed, {len(weather_alerts)} weather alerts, {len(sensor_alerts)} sensor alerts")
-            return self.last_realtime_analysis
-            
-        except Exception as e:
-            logger.error(f"Error in real-time processing: {e}")
-            return {"error": str(e), "timestamp": datetime.now().isoformat()}
+
     
-    def _analyze_realtime_field(self, field_data: pd.DataFrame, field_id: str) -> Dict[str, Any]:
-        """Analyze real-time data for a specific field"""
-        
-        # Calculate current metrics
-        current_temp = field_data['avg_temperature'].iloc[-1] if not field_data.empty else None
-        current_humidity = field_data['avg_humidity'].iloc[-1] if not field_data.empty else None
-        current_soil_ph = field_data['avg_soil_ph'].iloc[-1] if not field_data.empty else None
-        
-        # Calculate trends (last 24 hours)
-        if len(field_data) > 1:
-            temp_trend = "↗️" if current_temp > field_data['avg_temperature'].iloc[-2] else "↘️"
-            humidity_trend = "↗️" if current_humidity > field_data['avg_humidity'].iloc[-2] else "↘️"
-        else:
-            temp_trend = "→"
-            humidity_trend = "→"
-        
-        # Determine current risk level
-        risk_level = self._calculate_realtime_risk(current_temp, current_humidity, current_soil_ph)
-        
-        # Generate immediate guidance
-        guidance = self._generate_realtime_guidance(risk_level, current_temp, current_humidity)
-        
-        return {
-            "field_id": field_id,
-            "timestamp": datetime.now().isoformat(),
-            "current_data": {
-                "temperature": current_temp,
-                "humidity": current_humidity,
-                "soil_ph": current_soil_ph
-            },
-            "trends": {
-                "temperature_trend": temp_trend,
-                "humidity_trend": humidity_trend
-            },
-            "analysis": {
-                "current_risk": risk_level,
-                "immediate_condition": self._get_condition_description(risk_level),
-                "action_needed": guidance["action"],
-                "current_guide": guidance["message"]
-            }
-        }
+    # Real-time alert generation functions have been moved to the centralized alert system
+    # See: realtime_alert_manager.py, alert_factory.py, and alert_handlers/
     
-    def _calculate_realtime_risk(self, temp: float, humidity: float, soil_ph: float) -> str:
-        """Calculate real-time risk level based on current conditions"""
-        
-        risk_score = 0
-        
-        # Temperature risk (20-25°C is optimal for many diseases)
-        if 20 <= temp <= 25:
-            risk_score += 2
-        elif 18 <= temp <= 27:
-            risk_score += 1
-        
-        # Humidity risk (high humidity favors disease)
-        if humidity > 85:
-            risk_score += 3
-        elif humidity > 75:
-            risk_score += 2
-        elif humidity > 65:
-            risk_score += 1
-        
-        # Soil pH risk (neutral pH is generally good)
-        if 6.0 <= soil_ph <= 7.0:
-            risk_score += 0
-        else:
-            risk_score += 1
-        
-        # Determine risk level
-        if risk_score >= 5:
-            return "HIGH"
-        elif risk_score >= 3:
-            return "MEDIUM"
-        else:
-            return "LOW"
+    # Economic impact calculation moved to config/alert_thresholds.py (EconomicImpactConfig)
     
-    def _generate_realtime_guidance(self, risk_level: str, temp: float, humidity: float) -> Dict[str, str]:
-        """Generate real-time guidance based on current conditions"""
-        
-        if risk_level == "HIGH":
-            return {
-                "action": "Immediate monitoring required",
-                "message": f"High risk conditions detected. Temperature: {temp}°C, Humidity: {humidity}%. Monitor closely for disease symptoms."
-            }
-        elif risk_level == "MEDIUM":
-            return {
-                "action": "Monitor conditions",
-                "message": f"Moderate risk conditions. Temperature: {temp}°C, Humidity: {humidity}%. Check field in next 2 hours."
-            }
-        else:
-            return {
-                "action": "Continue normal operations",
-                "message": f"Low risk conditions. Temperature: {temp}°C, Humidity: {humidity}%. No immediate action needed."
-            }
-    
-    def _get_condition_description(self, risk_level: str) -> str:
-        """Get description of current conditions"""
-        descriptions = {
-            "HIGH": "Favorable for disease development",
-            "MEDIUM": "Moderate disease risk",
-            "LOW": "Unfavorable for disease development"
-        }
-        return descriptions.get(risk_level, "Unknown")
+    # Sensor recommendations moved to config/alert_thresholds.py (RecommendationConfig)
     
 
     
-    def _save_realtime_alerts(self, alerts: List[Dict[str, Any]]):
-        """Save real-time alerts directly to PostgreSQL"""
-        try:
-            import psycopg2
-            import json
-            
-            # PostgreSQL connection
-            conn = psycopg2.connect(
-                host=os.getenv('POSTGRES_HOST', 'postgres'),
-                port=os.getenv('POSTGRES_PORT', '5432'),
-                database=os.getenv('POSTGRES_DB', 'crop_disease_ml'),
-                user=os.getenv('POSTGRES_USER', 'ml_user'),
-                password=os.getenv('POSTGRES_PASSWORD', 'ml_password')
-            )
-            
-            cursor = conn.cursor()
-            
-            # Insert alerts directly into PostgreSQL
-            insert_query = """
-                INSERT INTO alerts (
-                    field_id, alert_timestamp, alert_type, severity, message,
-                    details, prediction_id, status
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            
-            for alert in alerts:
-                cursor.execute(insert_query, (
-                    alert.get('field_id'),
-                    alert.get('alert_timestamp'),
-                    alert.get('alert_type'),
-                    alert.get('severity'),
-                    alert.get('message'),
-                    json.dumps(alert.get('details', {})),
-                    alert.get('prediction_id'),
-                    alert.get('status', 'ACTIVE')
-                ))
-            
-            conn.commit()
-            cursor.close()
-            conn.close()
-            
-            logger.info(f"Saved {len(alerts)} real-time alerts directly to PostgreSQL")
-            
-        except Exception as e:
-            logger.error(f"Error saving real-time alerts: {e}")
+    # Real-time alert saving moved to database/alert_repository.py (AlertRepository)
     
+
 
     
     def run_batch_prediction(self) -> Dict[str, Any]:
@@ -403,24 +199,33 @@ class MLService:
             return {"error": str(e)}
     
     def get_active_alerts(self) -> Dict[str, Any]:
-        """Get active alerts from database"""
+        """Get active alerts from database (with refactored system integration)"""
         try:
-            # Query active alerts from PostgreSQL
-            alerts = self._query_alerts_from_database()
-            
-            return {
-                "timestamp": datetime.now().isoformat(),
-                "alerts": alerts,
-                "source": "database",
-                "count": len(alerts)
-            }
+            # Use the new centralized repository if available
+            if self.alert_manager:
+                alerts = self.alert_manager.alert_repository.get_active_alerts()
+                return {
+                    "timestamp": datetime.now().isoformat(),
+                    "alerts": alerts,
+                    "source": "refactored_alert_repository",
+                    "count": len(alerts)
+                }
+            else:
+                # Fallback to legacy query
+                alerts = self._query_alerts_from_database()
+                return {
+                    "timestamp": datetime.now().isoformat(),
+                    "alerts": alerts,
+                    "source": "legacy_database_query",
+                    "count": len(alerts)
+                }
                 
         except Exception as e:
             logger.error(f"Error getting active alerts: {e}")
             return {"error": str(e)}
     
     def _query_alerts_from_database(self) -> List[Dict[str, Any]]:
-        """Query alerts from PostgreSQL database"""
+        """Legacy alert query method (kept as fallback)"""
         try:
             import psycopg2
             from psycopg2.extras import RealDictCursor
@@ -467,7 +272,7 @@ class MLService:
             cursor.close()
             conn.close()
             
-            logger.info(f"Retrieved {len(alerts)} active alerts from database")
+            logger.info(f"Retrieved {len(alerts)} active alerts from legacy database query")
             return alerts
             
         except Exception as e:
@@ -491,7 +296,6 @@ class MLService:
             },
             "service_status": {
                 "initialized": self.is_initialized,
-                "last_realtime": self.last_realtime_analysis.get("timestamp") if self.last_realtime_analysis else None,
                 "last_batch": self.last_batch_prediction.get("timestamp") if self.last_batch_prediction else None
             }
         }
@@ -500,13 +304,16 @@ class MLService:
         """Get overall service status"""
         return {
             "service": "ml-service",
-            "mode": "dual-mode",
+            "mode": "dual-mode-refactored",
             "timestamp": datetime.now().isoformat(),
             "status": "running",
             "initialized": self.is_initialized,
-            "last_realtime_processing": self.last_realtime_analysis.get("timestamp") if self.last_realtime_analysis else None,
             "last_batch_prediction": self.last_batch_prediction.get("timestamp") if self.last_batch_prediction else None,
-            "models_status": self.get_models_status()
+            "models_status": self.get_models_status(),
+            "alert_system": {
+                "real_time_alerts": "refactored_centralized_system",
+                "batch_alerts": "ml_disease_predictions"
+            }
         }
     
     def shutdown(self):

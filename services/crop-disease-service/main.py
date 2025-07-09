@@ -16,9 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Import ML service components
-from ml_service import MLService
+from ml_processing.ml_service import MLService
 from api_service import APIService
-from scheduler_service import SchedulerService
+from ml_processing.scheduling.scheduler_service import SchedulerService
+from continuous_monitor_refactored import ContinuousMonitorRefactored
 
 # Configure logging
 logging.basicConfig(
@@ -35,13 +36,18 @@ class MLServiceOrchestrator:
     def __init__(self):
         self.ml_service = MLService()
         self.scheduler_service = SchedulerService(self.ml_service)
+        self.continuous_monitor = ContinuousMonitorRefactored(self.ml_service)
+        
+        # Connect the alert manager to ml_service for API access
+        self.ml_service.set_alert_manager(self.continuous_monitor.alert_manager)
+        
         self.api_service = APIService(self.ml_service, self.scheduler_service)
         
         # FastAPI app
         self.app = FastAPI(
             title="Crop Disease Service",
-            description="Dual-Mode Service for Real-time Analysis and Batch Predictions",
-            version="1.0.0"
+            description="Dual-Mode Service for Real-time Analysis and Batch Predictions (Refactored Alert System)",
+            version="1.1.0"
         )
         
         # Add CORS middleware
@@ -77,11 +83,7 @@ class MLServiceOrchestrator:
             """Get service status"""
             return self.ml_service.get_status()
         
-        @self.app.post("/predict/batch")
-        async def trigger_batch_prediction(background_tasks: BackgroundTasks):
-            """Trigger batch prediction manually"""
-            background_tasks.add_task(self.ml_service.run_batch_prediction)
-            return {"message": "Batch prediction triggered", "timestamp": datetime.now().isoformat()}
+
         
         @self.app.get("/predictions/recent")
         async def get_recent_predictions():
@@ -98,6 +100,21 @@ class MLServiceOrchestrator:
             """Get ML models status"""
             return self.ml_service.get_models_status()
         
+        @self.app.get("/monitor/status")
+        async def get_monitor_status():
+            """Get refactored continuous monitor status"""
+            return self.continuous_monitor.get_status()
+        
+        @self.app.post("/monitor/check")
+        async def trigger_manual_check():
+            """Trigger manual alert check (for testing/debugging)"""
+            return self.continuous_monitor.trigger_manual_check()
+        
+        @self.app.get("/monitor/health")
+        async def get_monitor_health():
+            """Get monitor health check"""
+            return self.continuous_monitor.health_check()
+        
         # Add API service routes
         self.api_service.add_routes(self.app)
     
@@ -112,25 +129,14 @@ class MLServiceOrchestrator:
         )
         scheduler_thread.start()
         logger.info("Scheduler service started")
-        
-        # Start real-time processing
-        realtime_thread = threading.Thread(
-            target=self._run_realtime_processing,
+
+        # Start refactored continuous monitor for real-time processing
+        monitor_thread = threading.Thread(
+            target=self.continuous_monitor.start,
             daemon=True
         )
-        realtime_thread.start()
-        logger.info("Real-time processing started")
-    
-    def _run_realtime_processing(self):
-        """Run real-time processing loop"""
-        while self.is_running:
-            try:
-                # Process real-time data every 5 minutes
-                self.ml_service.process_realtime_data()
-                time.sleep(300)  # 5 minutes
-            except Exception as e:
-                logger.error(f"Error in real-time processing: {e}")
-                time.sleep(60)
+        monitor_thread.start()
+        logger.info("Refactored continuous monitor service started")
     
     def shutdown(self):
         """Graceful shutdown"""
@@ -138,10 +144,11 @@ class MLServiceOrchestrator:
         self.is_running = False
         self.scheduler_service.stop()
         self.ml_service.shutdown()
+        self.continuous_monitor.stop()
 
 def main():
     """Main entry point"""
-    logger.info("Starting Crop Disease Service (Dual-Mode Architecture)...")
+    logger.info("Starting Crop Disease Service (Dual-Mode Architecture with Refactored Alert System)...")
     
     # Create orchestrator
     orchestrator = MLServiceOrchestrator()

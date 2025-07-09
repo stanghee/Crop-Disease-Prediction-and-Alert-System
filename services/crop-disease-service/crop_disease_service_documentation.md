@@ -8,417 +8,372 @@ The Crop Disease Service implements the **Dual-Mode Architecture** for crop dise
 
 The system implements a **dual-mode architecture** that combines **real-time monitoring** and **ML batch analysis** to provide comprehensive crop disease risk coverage.
 
-### 🔄 Mode 1: Real-time Processing (Every 5 minutes)
+### Mode 1: Real-time Processing (Every minute)
 
 **Purpose**: Immediate monitoring and rapid response
-- **Frequency**: Every 5 minutes (288 times per day)
+- **Frequency**: Every minute (1,440 times per day)
 - **Speed**: < 30 seconds processing time
-- **Data**: Sensor data only from Gold zone (temperature, humidity, pH)
-- **Logic**: Simple threshold-based rules
+- **Data**: Sensor and weather data from **Silver layer**
+- **Logic**: Centralized threshold-based rules
 - **Output**: 
-  - Current condition analysis
+  - `SENSOR_ANOMALY` alerts (field-specific)
+  - `WEATHER_ALERT` alerts (regional)
   - Immediate guidance for operators
-  - Live dashboard updates
-  - `SENSOR_ANOMALY` alerts
 - **Storage**: PostgreSQL for fast access
 - **Use**: Daily operational monitoring
 
-**Real-time output example**:
-```json
-{
-  "field_id": "field_02",
-  "current_risk": "MEDIUM",
-  "message": "High humidity detected (88%). Monitor for next 2 hours",
-  "immediate_action": "Check leaves for wetness"
-}
-```
-
-### 🤖 Mode 2: Batch Processing (Every 6 hours)
+### Mode 2: Batch Processing (Every 6 hours)
 
 **Purpose**: Strategic ML predictions and economic analysis
 - **Frequency**: Every 6 hours (00:00, 06:00, 12:00, 18:00)
 - **Speed**: ~30 minutes processing time
-- **Data**: Complete ML features from Gold zone (includes weather data)
+- **Data**: Complete ML features from **Gold layer**
 - **Logic**: Random Forest model with economic analysis
 - **Output**:
+  - `DISEASE_DETECTED` alerts
   - 7-day disease predictions
   - Economic impact analysis
   - Strategic recommendations
-  - `DISEASE_DETECTED` alerts
 - **Storage**: PostgreSQL for historical analysis
 - **Use**: Strategic planning and business decisions
-
-**Batch output example**:
-```json
-{
-  "field_id": "field_02",
-  "disease_risk_7_days": "HIGH",
-  "probability": 0.78,
-  "economic_impact": {
-    "potential_loss": "€1,200",
-    "treatment_cost": "€200",
-    "roi": "€1,000 savings"
-  },
-  "recommendation": "Preventive treatment within 48 hours"
-}
-```
-
-### 🌦️ Weather Alerts (When needed)
-
-**Purpose**: Specific alerts for adverse weather conditions
-- **Frequency**: When critical conditions are detected
-- **Data**: Weather data from Silver zone
-- **Logic**: Weather threshold-based rules
-- **Output**: `WEATHER_ALERT` alerts
-- **Use**: Crop protection from weather events
-
-### 📊 Mode Comparison
-
-| Aspect | Real-time (5 min) | Batch (6 hours) | Weather |
-|--------|------------------|-----------------|---------|
-| **Frequency** | Every 5 minutes | Every 6 hours | When needed |
-| **Speed** | < 30 seconds | ~30 minutes | < 1 minute |
-| **Data** | Sensors only | Complete ML features | Weather only |
-| **Logic** | Simple rules | ML Random Forest | Weather thresholds |
-| **Purpose** | Immediate monitoring | Strategic predictions | Crop protection |
-| **Alert Type** | `SENSOR_ANOMALY` | `DISEASE_DETECTED` | `WEATHER_ALERT` |
-| **Use** | Operational | Strategic | Emergency |
-
-### 🔄 Mode Integration
-
-The three modes work in synergy:
-- **Real-time** provides continuous monitoring and immediate response
-- **Batch** provides in-depth analysis and strategic planning
-- **Weather** provides protection from environmental events
-- All alerts are stored in PostgreSQL for unified access
-- Dashboard displays all 3 alert types in real-time
-
-## Data Flow Architecture
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   SENSOR        │    │     BATCH       │    │    WEATHER      │
-│   ALERTS        │    │   PROCESSING    │    │    ALERTS       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   GOLD ZONE     │    │   GOLD ZONE     │    │   SILVER ZONE   │
-│ Sensor Data     │    │ ML Features     │    │ Weather Data    │
-│ (Recent)        │    │ (Historical)    │    │ (Current)       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│ Simple Rules    │    │ Random Forest   │    │ Threshold       │
-│ Risk Calc       │    │ ML Model        │    │ Rules           │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│ SENSOR_ANOMALY  │    │ DISEASE_DETECTED│    │ WEATHER_ALERT   │
-│ Alert           │    │ Alert           │    │ Alert           │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 ▼
-                    ┌─────────────────────────┐
-                    │     POSTGRESQL          │
-                    │ • All alerts stored     │
-                    │ • Dashboard access      │
-                    │ • Fast queries          │
-                    └─────────────────────────┘
-```
 
 ## Service Structure
 
 ```
 services/crop-disease-service/
-├── main.py                 # Main entry point with FastAPI orchestrator
-├── ml_service.py           # Core crop disease service with dual-mode processing
-├── api_service.py          # REST API endpoints
-├── scheduler_service.py    # Batch scheduling (6-hour intervals)
-├── requirements.txt        # Python dependencies
-├── Dockerfile             # Container configuration
-├── ml_service_documentation.md              # This file
-├── models/                # ML models directory
-│   ├── disease_predictor.py    # Disease prediction model (Random Forest + fallback)
-│   └── alert_generator.py      # Alert generation with economic impact
-├── data/                  # Data handling
-│   └── data_loader.py         # Data loading from Gold/Silver zones
-├── sync/                  # Data synchronization
-│   └── data_sync_service.py   # PostgreSQL sync for real-time access
-└── database/              # Database schema
-    └── init.sql               # PostgreSQL tables and views
+├── ml_processing/                    # Centralized ML System
+│   ├── __init__.py                   # Main package
+│   ├── ml_service.py                 # Core ML service (batch processing)
+│   ├── models/                       # ML models for Gold layer
+│   │   ├── __init__.py
+│   │   ├── disease_predictor.py      # Random Forest ML model
+│   │   └── alert_generator.py        # Strategic alert generator
+│   ├── data_loading/                 # Data loading for Gold layer
+│   │   ├── __init__.py
+│   │   ├── data_loader.py            # Gold layer data loading
+│   │   └── data_sync_service.py      # PostgreSQL sync
+│   └── scheduling/                   # Batch scheduling
+│       ├── __init__.py
+│       └── scheduler_service.py      # 6-hour batch scheduler
+├── realtime_alert_manager.py         # Real-time alert orchestrator
+├── alert_factory.py                  # Unified alert creation
+├── alert_handlers/                   # Specialized handlers
+│   ├── sensor_alert_handler.py       # Sensor alerts (Silver layer)
+│   └── weather_alert_handler.py      # Weather alerts (Silver layer)
+├── config/                           # Centralized configuration
+│   └── alert_thresholds.py           # Threshold rules & economic impact
+├── database/                         # Database abstraction
+│   └── alert_repository.py           # Alert database operations
+├── continuous_monitor_refactored.py  # Clean real-time monitor
+├── api_service.py                    # REST API endpoints
+├── main.py                           # Main orchestrator
+├── crop_disease_service_documentation.md  # This file
+├── logs/                             # Log files
+└── requirements.txt & Dockerfile     # Deployment files
+```
+
+## Data Flow Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    REAL-TIME PROCESSING                        │
+│                    (Every minute)                              │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────┐    ┌─────────────────┐    
+│   SILVER LAYER  │    │   SILVER LAYER  │    
+│ Sensor Data     │    │ Weather Data    │    
+│                 │    │                 │    
+└─────────────────┘    └─────────────────┘    
+         │                       │                       
+         ▼                       ▼                       
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│SensorAlertHandler│   │WeatherAlertHandler│  │RealtimeAlertManager│
+│ • Thresholds    │    │ • Thresholds    │    │ • Orchestration │
+│ • Validation    │    │ • Validation    │    │ • Statistics    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 ▼
+                    ┌─────────────────────────┐
+                    │    AlertFactory         │
+                    │ • Unified formatting    │
+                    │ • Economic impact       │
+                    │ • Recommendations       │
+                    └─────────────────────────┘
+                                 │
+                                 ▼
+                    ┌─────────────────────────┐
+                    │  AlertRepository        │
+                    │ • PostgreSQL storage    │
+                    │ • Batch operations      │
+                    │ • Statistics            │
+                    └─────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    BATCH PROCESSING                             │
+│                    (Every 6 hours)                              │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        GOLD LAYER                               │
+│ • ML Features (historical)                                      │
+│ • Integrated sensor + weather data                              │
+│ • Aggregated metrics                                            │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    ML PROCESSING SYSTEM                         │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │  DataLoader     │  │DiseasePredictor │  │AlertGenerator   │  │
+│  │ • Gold layer    │  │ • Random Forest │  │ • Strategic     │  │
+│  │ • Features      │  │ • Probability   │  │ • Economic      │  │
+│  │ • Historical    │  │ • Confidence    │  │ • ROI analysis  │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+                    ┌─────────────────────────┐
+                    │  AlertRepository        │
+                    │ • DISEASE_DETECTED      │
+                    │ • Strategic alerts      │
+                    │ • Historical analysis   │
+                    └─────────────────────────┘
+```
+
+## Core Components
+
+### ML Processing System (`ml_processing/`)
+**Purpose**: Centralized batch ML processing with Gold layer data
+
+#### Core Components:
+- **`ml_service.py`**: Main orchestrator for batch processing
+- **`models/`**: ML models for disease prediction
+  - `disease_predictor.py`: Random Forest model with fallback
+  - `alert_generator.py`: Strategic alert generation
+- **`data_loading/`**: Gold layer data management
+  - `data_loader.py`: ML features loading
+  - `data_sync_service.py`: PostgreSQL synchronization
+- **`scheduling/`**: Batch processing scheduling
+  - `scheduler_service.py`: 6-hour batch scheduler
+
+#### Key Features:
+- **Gold Layer Integration**: Uses aggregated ML features
+- **Batch Processing**: Every 6 hours for strategic predictions
+- **Economic Analysis**: ROI calculations and impact assessment
+- **Model Management**: Training, retraining, versioning
+
+### Real-time Alert System
+**Purpose**: Immediate monitoring with Silver layer data
+
+#### Core Components:
+- **`realtime_alert_manager.py`**: Central orchestrator
+- **`alert_factory.py`**: Unified alert creation
+- **`alert_handlers/`**: Specialized processors
+  - `sensor_alert_handler.py`: Sensor data processing
+  - `weather_alert_handler.py`: Weather data processing
+- **`config/alert_thresholds.py`**: Centralized configuration
+- **`database/alert_repository.py`**: Database abstraction
+
+#### Key Features:
+- **Silver Layer Integration**: Uses real-time sensor and weather data
+- **Centralized Configuration**: No more hardcoded thresholds
+- **Unified Format**: Consistent alert structure
+- **Real-time Processing**: Every minute monitoring
+
+## Alert Types and Data Sources
+
+### Real-time Alerts (Silver Layer)
+| Alert Type | Data Source | Frequency | Purpose |
+|------------|-------------|-----------|---------|
+| `SENSOR_ANOMALY` | Silver layer sensors | Every minute | Field-specific monitoring |
+| `WEATHER_ALERT` | Silver layer weather | Every minute | Regional weather protection |
+
+### Batch Alerts (Gold Layer)
+| Alert Type | Data Source | Frequency | Purpose |
+|------------|-------------|-----------|---------|
+| `DISEASE_DETECTED` | Gold layer ML features | Every 6 hours | Strategic disease prediction |
+
+## Configuration Management
+
+### Centralized Thresholds (`config/alert_thresholds.py`)
+```python
+# Sensor Thresholds
+TEMPERATURE_THRESHOLDS = [
+    ThresholdRule("temperature", ">", 35.0, RiskLevel.HIGH, "Temperature too high: {value}°C"),
+    ThresholdRule("temperature", "<", 5.0, RiskLevel.HIGH, "Temperature too low: {value}°C"),
+]
+
+# Weather Thresholds  
+WEATHER_THRESHOLDS = [
+    ThresholdRule("temp_c", ">", 40.0, RiskLevel.CRITICAL, "Temperature extremely high: {value}°C"),
+    ThresholdRule("wind_kph", ">", 40.0, RiskLevel.CRITICAL, "Wind speed extremely high: {value} km/h"),
+]
+
+# Economic Impact
+ECONOMIC_IMPACT = {
+    'HIGH_TEMPERATURE': {
+        RiskLevel.HIGH: {'potential_loss': 1200, 'treatment_cost': 200},
+        RiskLevel.CRITICAL: {'potential_loss': 2000, 'treatment_cost': 300}
+    }
+}
 ```
 
 ## Quick Start
 
 ### 1. Start the Service
-
 ```bash
-# Start all services including crop disease service
+# Start all services
 docker-compose up -d
 
-# Check crop disease service status
+# Check service status
 curl http://localhost:8000/health
 ```
 
 ### 2. Access the API
-
-The crop disease service provides a REST API at `http://localhost:8000`:
-
 ```bash
-# Health check
-curl http://localhost:8000/health
+# Real-time alerts
+curl http://localhost:8000/alerts/sensors
+curl http://localhost:8000/alerts/weather
 
-# Get system status
-curl http://localhost:8000/status
-
-# Get recent predictions
+# Batch predictions
 curl http://localhost:8000/predictions/recent
 
-# Get active alerts
-curl http://localhost:8000/alerts/active
+# System status
+curl http://localhost:8000/system/status
 ```
 
-## 📊 API Endpoints
+## API Endpoints
 
-### Real-time Endpoints
-- `GET /api/v1/realtime/status` - Get real-time processing status
-- `POST /api/v1/realtime/process` - Trigger real-time processing
+### Real-time Alert Endpoints
+- `GET /alerts/sensors` - Get sensor alerts (Silver layer)
+- `GET /alerts/weather` - Get weather alerts (Silver layer)
+- `GET /alerts/statistics` - Get alert statistics
+- `GET /alerts/configuration` - Get threshold configuration
+- `POST /alerts/cleanup` - Clean up old alerts
 
-### Batch Endpoints
-- `GET /api/v1/batch/status` - Get batch processing status
-- `POST /api/v1/batch/predict` - Trigger batch prediction
-- `GET /api/v1/batch/schedule` - Get batch schedule
-- `PUT /api/v1/batch/schedule` - Update batch schedule
+### Batch Processing Endpoints
+- `GET /batch/status` - Get batch processing status
+- `POST /batch/predict` - Trigger batch prediction
+- `GET /batch/schedule` - Get batch schedule
+- `PUT /batch/schedule` - Update batch schedule
 
-### Predictions Endpoints
-- `GET /api/v1/predictions` - Get recent predictions
-- `POST /api/v1/predictions/predict` - Make prediction for field
+### ML Predictions Endpoints
+- `GET /predictions` - Get recent predictions (Gold layer)
+- `POST /predictions/predict` - Make prediction for field
 
-### Alerts Endpoints
-- `GET /api/v1/alerts` - Get active alerts
-- `GET /api/v1/alerts/weather` - Get weather alerts
-- `PUT /api/v1/alerts/{alert_id}` - Update alert status
-
-### Models Endpoints
-- `GET /api/v1/models` - Get ML models status
+### Monitor Endpoints
+- `GET /monitor/status` - Get real-time monitor status
+- `POST /monitor/check` - Trigger manual alert check
+- `GET /monitor/health` - Get monitor health check
 
 ### System Endpoints
-- `GET /api/v1/system/status` - Get system status
-- `GET /api/v1/system/health` - Health check
+- `GET /system/status` - Get overall system status
+- `GET /system/health` - Health check
 
-## ML Models
+## Migration Guide
 
-### Disease Predictor
-- **Algorithm**: Random Forest (with fallback to rule-based)
-- **Features**: 
-  - Real-time: Temperature, humidity, soil pH (sensor data only)
-  - Batch: Temperature, humidity, soil pH, weather data, anomalies
-- **Output**: Disease probability, risk level, confidence score
-- **Training**: Synthetic data initially, retrained weekly with real data
+### From Legacy to Current Architecture
 
-### Alert Generator
-- **Input**: ML predictions
-- **Output**: Strategic alerts with economic impact analysis
-- **Features**: Risk assessment, treatment recommendations, ROI calculation
-
-## Data Flow
-
-### Real-time Processing (Mode 1)
-1. **Data Source**: Gold zone sensor metrics (recent data)
-2. **Processing**: Simple risk calculation based on current conditions
-3. **Output**: Real-time analysis and immediate guidance
-4. **Storage**: PostgreSQL for dashboard access
-
-### Batch Processing (Mode 2)
-1. **Data Source**: Gold zone ML features (includes weather data)
-2. **Processing**: Full ML model prediction with confidence scoring
-3. **Output**: Disease predictions and strategic alerts
-4. **Storage**: PostgreSQL for long-term analysis
-
-## Real-time Processing Example
-
+#### Real-time Alerts:
 ```python
-# Real-time analysis result
-{
-    "field_id": "field_02",
-    "timestamp": "2024-01-15 14:30:00",
-    "current_data": {
-        "temperature": 24.5,
-        "humidity": 88,
-        "soil_ph": 6.2
-    },
-    "trends": {
-        "temperature_trend": "↗️",
-        "humidity_trend": "↗️"
-    },
-    "analysis": {
-        "current_risk": "MEDIUM",
-        "immediate_condition": "Favorable for Late Blight",
-        "action_needed": "Monitor humidity for next 2 hours",
-        "current_guide": "High humidity detected. Check for leaf wetness."
-    }
-}
+# OLD (Legacy)
+alerts = data_loader.check_sensor_alerts_from_silver()
+
+# NEW (Current)
+alerts = alert_manager.sensor_handler.get_threshold_violations()
 ```
 
-## Batch Processing Example
-
+#### Weather Alerts:
 ```python
-# Batch prediction result
-{
-    "field_id": "field_02",
-    "prediction_timestamp": "2024-01-15 12:00:00",
-    "ml_analysis": {
-        "disease_risk_7_days": "HIGH",
-        "probability": 0.78,
-        "confidence": 0.85,
-        "expected_onset": "3-5 days",
-        "triggering_factors": [
-            "Extended humidity > 85%",
-            "Temperature 20-25°C",
-            "Weather forecast: 5 days rain"
-        ]
-    },
-    "strategic_alert": {
-        "priority": "HIGH",
-        "message": "Preventive treatment recommended within 48 hours",
-        "economic_impact": {
-            "potential_loss": "€1,200",
-            "treatment_cost": "€200",
-            "roi": "€1,000 savings"
-        }
-    }
-}
+# OLD (Legacy)
+alerts = data_loader.check_weather_alerts()
+
+# NEW (Current)
+alerts = alert_manager.weather_handler.get_threshold_violations()
 ```
 
-## Configuration
+#### Batch Processing:
+```python
+# OLD (Legacy)
+from ml_service import MLService
 
-### Environment Variables
-
-```bash
-# Crop Disease Service Configuration
-CROP_DISEASE_SERVICE_HOST=0.0.0.0
-CROP_DISEASE_SERVICE_PORT=8000
-
-# PostgreSQL Configuration
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
-POSTGRES_DB=crop_disease_ml
-POSTGRES_USER=ml_user
-POSTGRES_PASSWORD=ml_password
-
-# MinIO Configuration (Data Lake Only)
-MINIO_ENDPOINT=minio:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-
-# Data Lake Paths
-GOLD_PATH=s3a://gold/
-SILVER_PATH=s3a://silver/
-
-# ML Model Configuration
-BATCH_INTERVAL_HOURS=6
-BATCH_START_HOUR=0
+# NEW (Current)
+from ml_processing.ml_service import MLService
 ```
 
-## Scheduling
+## Development Guidelines
 
-### Batch Processing Schedule
-- **Frequency**: Every 6 hours (00:00, 06:00, 12:00, 18:00)
-- **Duration**: ~30 minutes per batch
-- **Output**: ML predictions and strategic alerts
-
-### Model Retraining Schedule
-- **Frequency**: Weekly (Sunday at 2:00 AM)
-- **Duration**: ~1 hour
-- **Input**: 30 days of historical data
-
-### Data Quality Check Schedule
-- **Frequency**: Daily (6:00 AM)
-- **Purpose**: Monitor data quality and completeness
-
-## Database Schema
-
-### Key Tables
-- **ml_predictions**: Stores all ML predictions with features and metadata
-- **alerts**: Stores all alerts (real-time and batch) with status tracking
-- **model_metadata**: Tracks ML model versions and performance
-- **data_sync_log**: Logs data synchronization activities
-- **user_preferences**: User alert and dashboard preferences
-
-### Views
-- **recent_predictions**: Latest predictions for dashboard
-- **active_alerts**: Currently active alerts
-- **model_performance_summary**: Model performance metrics
-
-## Monitoring
-
-### Health Checks
-```bash
-# Service health
-curl http://localhost:8000/health
-
-# System status
-curl http://localhost:8000/api/v1/system/status
-
-# Data quality
-curl http://localhost:8000/api/v1/data/quality
-```
-
-### Performance Metrics
-- **Real-time latency**: < 30 seconds
-- **Batch processing time**: < 30 minutes
-- **Prediction accuracy**: > 85%
-- **API response time**: < 100ms
-
-## Development
-
-### Local Development
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run service locally
-python main.py
-
-# Run tests
-python -m pytest tests/
-```
-
-### Adding New Models
-1. Create model class in `models/` directory
-2. Implement required methods (initialize, predict, retrain)
-3. Update `ml_service.py` to include new model
+### Adding New Alert Types
+1. Create handler in `alert_handlers/`
+2. Add thresholds in `config/alert_thresholds.py`
+3. Update `alert_factory.py` for new alert type
 4. Add API endpoints in `api_service.py`
 
-### Adding New Features
-1. Create feature engineering logic in `data/data_loader.py`
-2. Update model feature columns in `models/disease_predictor.py`
-3. Retrain models with new features
-4. Update API documentation
+### Adding New ML Models
+1. Create model in `ml_processing/models/`
+2. Update `ml_processing/ml_service.py`
+3. Add to `ml_processing/models/__init__.py`
+4. Update API endpoints
 
-## Key Implementation Details
+### Adding New Data Sources
+1. Update `ml_processing/data_loading/data_loader.py` for Gold layer
+2. Update `alert_handlers/` for Silver layer
+3. Add configuration in `config/`
 
-### Data Sources
-- **Real-time**: Uses Gold zone sensor data only (no weather features)
-- **Batch**: Uses Gold zone ML features (includes weather data from Silver zone)
-- **Weather Alerts**: Separate threshold-based alerts from Silver zone weather data
+## Performance Metrics
 
-### Storage Strategy
-- **All data stored in PostgreSQL**: Predictions, alerts, user preferences
-- **MinIO used only for data lake**: Raw data processing and feature engineering
-- **No data duplication**: Single source of truth for ML results
+### Real-time Processing
+- **Latency**: < 30 seconds
+- **Frequency**: Every minute
+- **Data Source**: Silver layer
+- **Alert Types**: SENSOR_ANOMALY, WEATHER_ALERT
 
-### Error Handling
-- **Fallback models**: Rule-based prediction when ML models fail
-- **Graceful degradation**: Service continues with reduced functionality
-- **Comprehensive logging**: All operations logged for debugging
+### Batch Processing
+- **Latency**: < 30 minutes
+- **Frequency**: Every 6 hours
+- **Data Source**: Gold layer
+- **Alert Types**: DISEASE_DETECTED
 
-### Scalability
-- **Background processing**: Real-time and batch run in separate threads
-- **Database indexing**: Optimized queries for dashboard performance
-- **Modular architecture**: Easy to add new models and features
+## Monitoring and Health Checks
+
+### Service Health
+```bash
+# Overall health
+curl http://localhost:8000/health
+
+# Real-time monitor
+curl http://localhost:8000/monitor/health
+
+# ML processing
+curl http://localhost:8000/system/status
+```
+
+### Alert Statistics
+```bash
+# Get alert statistics
+curl http://localhost:8000/alerts/statistics
+
+# Get configuration info
+curl http://localhost:8000/alerts/configuration
+```
+
+## Key Benefits
+
+1. **Maintainability**: Centralized configuration and clean architecture
+2. **Testability**: Modular components with clear interfaces
+3. **Consistency**: Unified alert format across all sources
+4. **Observability**: Better monitoring and statistics
+5. **Extensibility**: Easy to add new alert types and models
+6. **Organization**: Clear separation between real-time and batch processing
+7. **Performance**: Optimized data flow and processing
+8. **Reliability**: Better error handling and fallback mechanisms
+
+---
+
+**The Crop Disease Service provides a clean, maintainable, and scalable architecture for comprehensive crop disease monitoring and prediction!**
+
 
