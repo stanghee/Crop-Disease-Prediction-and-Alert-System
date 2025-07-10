@@ -89,8 +89,8 @@ class MLService:
     
 
     
-    # Real-time alert generation functions have been moved to the centralized alert system
-    # See: realtime_alert_manager.py, alert_factory.py, and alert_handlers/
+    # Real-time alert generation functions have been moved to the Kafka alert consumer
+    # See: kafka_alert_consumer.py, alert_factory.py
     
     # Economic impact calculation moved to config/alert_thresholds.py (EconomicImpactConfig)
     
@@ -160,7 +160,7 @@ class MLService:
         """Save batch prediction results to storage"""
         try:
             # Save to PostgreSQL via sync service
-            from sync.data_sync_service import DataSyncService
+            from .data_loading.data_sync_service import DataSyncService
             sync_service = DataSyncService(self.spark)
             
             # Save predictions
@@ -180,7 +180,7 @@ class MLService:
         """Get recent predictions for dashboard"""
         try:
             # Load recent predictions from PostgreSQL
-            from sync.data_sync_service import DataSyncService
+            from .data_loading.data_sync_service import DataSyncService
             sync_service = DataSyncService(self.spark)
             
             # This would typically query the database

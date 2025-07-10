@@ -111,7 +111,7 @@ services:
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - TIMEZONE=Europe/Rome
-      - ANOMALY_PROBABILITY=${ANOMALY_PROBABILITY}
+      - ANOMALY_PROBABILITY=0.5 # TODO: change with env variable
     restart: unless-stopped
     mem_limit: 256m
     mem_reservation: 128m
@@ -225,7 +225,6 @@ services:
     restart: unless-stopped
     mem_limit: 2g
     mem_reservation: 1g
-
 
 
 volumes:

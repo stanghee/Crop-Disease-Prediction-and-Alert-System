@@ -111,20 +111,25 @@ class MainDataLakeService:
         logger.info("Starting Silver zone streaming processing...")
         queries = []
         try:
-            sensor_query = self.silver_processor.start_sensor_stream()
-            if sensor_query:
-                queries.append(sensor_query)
-                logger.info("Sensor Silver streaming started")
+            # Start sensor streaming (returns tuple: silver_query, kafka_query)
+            sensor_queries = self.silver_processor.start_sensor_stream()
+            if sensor_queries:
+                silver_query, kafka_query = sensor_queries
+                queries.extend([silver_query, kafka_query])
+                logger.info("Sensor Silver streaming started (Parquet + Kafka)")
             else:
                 logger.warning("Sensor Silver streaming failed to start")
             
-            weather_query = self.silver_processor.start_weather_stream()
-            if weather_query:
-                queries.append(weather_query)
-                logger.info("Weather Silver streaming started")
+            # Start weather streaming (returns tuple: silver_query, kafka_query)
+            weather_queries = self.silver_processor.start_weather_stream()
+            if weather_queries:
+                silver_query, kafka_query = weather_queries
+                queries.extend([silver_query, kafka_query])
+                logger.info("Weather Silver streaming started (Parquet + Kafka)")
             else:
                 logger.warning("Weather Silver streaming failed to start")
             
+            # Start satellite streaming (returns single query)
             satellite_query = self.silver_processor.start_satellite_stream()
             if satellite_query:
                 queries.append(satellite_query)
@@ -132,7 +137,7 @@ class MainDataLakeService:
             else:
                 logger.warning("Satellite Silver streaming failed to start")
             
-            logger.info(f"Started {len(queries)} Silver streaming queries out of 3 attempted")
+            logger.info(f"Started {len(queries)} Silver streaming queries out of 5 attempted")
         except Exception as e:
             logger.error(f"Error starting Silver streaming: {e}")
             # Stop any started queries

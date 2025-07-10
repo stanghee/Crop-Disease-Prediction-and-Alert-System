@@ -38,8 +38,8 @@ class MLServiceOrchestrator:
         self.scheduler_service = SchedulerService(self.ml_service)
         self.continuous_monitor = ContinuousMonitorRefactored(self.ml_service)
         
-        # Connect the alert manager to ml_service for API access
-        self.ml_service.set_alert_manager(self.continuous_monitor.alert_manager)
+        # Connect the alert consumer to ml_service for API access
+        self.ml_service.set_alert_manager(self.continuous_monitor.alert_consumer)
         
         self.api_service = APIService(self.ml_service, self.scheduler_service)
         

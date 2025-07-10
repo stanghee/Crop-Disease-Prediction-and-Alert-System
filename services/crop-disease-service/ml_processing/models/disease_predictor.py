@@ -115,7 +115,10 @@ class DiseasePredictor:
             'temperature_range': np.random.exponential(3, n_samples), # 0-15°C
             'humidity_range': np.random.exponential(10, n_samples),   # 0-30%
             'anomaly_rate': np.random.beta(2, 8, n_samples),         # 0-1
-            'data_quality_score': np.random.beta(8, 2, n_samples)    # 0-1
+            'data_quality_score': np.random.beta(8, 2, n_samples),   # 0-1
+            'weather_avg_temperature': np.random.normal(23, 6, n_samples),  # 17-29°C
+            'weather_avg_humidity': np.random.normal(72, 18, n_samples),    # 36-108%
+            'weather_avg_wind_speed': np.random.exponential(4, n_samples)   # 0-20 m/s
         }
         
         X = pd.DataFrame(data)
@@ -179,9 +182,37 @@ class DiseasePredictor:
         )
         risk_scores += anomaly_risk
         
+        # Weather temperature risk
+        weather_temp_risk = np.where(
+            (X['weather_avg_temperature'] >= 20) & (X['weather_avg_temperature'] <= 26),
+            1,  # Medium risk
+            0   # Low risk
+        )
+        risk_scores += weather_temp_risk
+        
+        # Weather humidity risk
+        weather_humidity_risk = np.where(
+            X['weather_avg_humidity'] > 80,
+            2,  # High risk
+            np.where(
+                X['weather_avg_humidity'] > 70,
+                1,  # Medium risk
+                0   # Low risk
+            )
+        )
+        risk_scores += weather_humidity_risk
+        
+        # Wind speed risk (high wind can spread diseases)
+        wind_risk = np.where(
+            X['weather_avg_wind_speed'] > 10,
+            1,  # Medium risk
+            0   # Low risk
+        )
+        risk_scores += wind_risk
+        
         # Convert to binary labels (disease present/absent)
-        # Threshold: risk score >= 4 indicates disease risk
-        y = (risk_scores >= 4).astype(int)
+        # Threshold: risk score >= 6 indicates disease risk (increased due to more features)
+        y = (risk_scores >= 6).astype(int)
         
         # Add some noise to make it more realistic
         noise = np.random.random(len(y)) < 0.1  # 10% noise

@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Set
 import hashlib
 
-from realtime_alert_manager import RealtimeAlertManager
+from kafka_alert_consumer import KafkaAlertConsumer
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +27,8 @@ class ContinuousMonitorRefactored:
         self.is_running = False
         self.monitor_thread = None
         
-        # Initialize the centralized alert manager
-        self.alert_manager = RealtimeAlertManager(
-            ml_service.data_loader,
-            ml_service.spark
-        )
+        # Initialize the Kafka alert consumer
+        self.alert_consumer = KafkaAlertConsumer(ml_service.spark)
         
         # Track processed records to avoid duplicates
         self.processed_records: Set[str] = set()
@@ -54,6 +51,9 @@ class ContinuousMonitorRefactored:
         logger.info("Starting refactored continuous monitor service...")
         self.is_running = True
         
+        # Start Kafka alert consumer
+        self.alert_consumer.start()
+        
         # Start monitoring thread
         self.monitor_thread = threading.Thread(
             target=self._monitor_loop,
@@ -68,31 +68,34 @@ class ContinuousMonitorRefactored:
         logger.info("Stopping refactored continuous monitor service...")
         self.is_running = False
         
+        # Stop Kafka alert consumer
+        self.alert_consumer.stop()
+        
         if self.monitor_thread:
             self.monitor_thread.join(timeout=5)
         
         logger.info("Refactored continuous monitor service stopped")
     
     def _monitor_loop(self):
-        """Main monitoring loop - runs every minute"""
+        """Main monitoring loop - runs every 10 seconds for real-time alerts"""
         while self.is_running:
             try:
                 start_time = time.time()
                 
-                # Process sensor alerts using centralized manager
-                sensor_result = self.alert_manager.process_sensor_alerts()
+                # Process sensor alerts using Kafka consumer
+                sensor_result = self.alert_consumer.process_iot_alerts()
                 
-                # Process weather alerts using centralized manager
-                weather_result = self.alert_manager.process_weather_alerts()
+                # Process weather alerts using Kafka consumer
+                weather_result = self.alert_consumer.process_weather_alerts()
                 
                 # Update local statistics
                 self._update_stats(sensor_result, weather_result)
                 
-                # Calculate sleep time to maintain 1-minute intervals
+                # Calculate sleep time to maintain 10-second intervals
                 elapsed = time.time() - start_time
-                sleep_time = max(60 - elapsed, 1)  # Minimum 1 second sleep
+                sleep_time = max(10 - elapsed, 0.1)  # Minimum 0.1 second sleep
                 
-                logger.debug(f"Monitor check completed in {elapsed:.2f}s, sleeping for {sleep_time:.2f}s")
+                logger.info(f"Monitor check completed in {elapsed:.2f}s, sleeping for {sleep_time:.2f}s")
                 time.sleep(sleep_time)
                 
             except Exception as e:
@@ -138,8 +141,8 @@ class ContinuousMonitorRefactored:
                 'total_alerts': self.stats['sensor_alerts_generated'] + self.stats['weather_alerts_generated'],
                 'last_processing_time_ms': self.stats['last_processing_time_ms']
             },
-            'alert_manager_stats': self.alert_manager.get_stats(),
-            'health_check': self.alert_manager.health_check(),
+            'alert_consumer_stats': self.alert_consumer.get_stats(),
+            'health_check': self.alert_consumer.health_check(),
             'timestamp': datetime.now().isoformat()
         }
     
@@ -162,7 +165,7 @@ class ContinuousMonitorRefactored:
             self.is_running and
             self.monitor_thread and
             self.monitor_thread.is_alive() and
-            self.alert_manager.health_check()['status'] == 'healthy'
+            self.alert_consumer.health_check()['status'] == 'healthy'
         )
         
         return {
@@ -184,8 +187,8 @@ class ContinuousMonitorRefactored:
             start_time = time.time()
             
             # Process alerts manually
-            sensor_result = self.alert_manager.process_sensor_alerts()
-            weather_result = self.alert_manager.process_weather_alerts()
+            sensor_result = self.alert_consumer.process_iot_alerts()
+            weather_result = self.alert_consumer.process_weather_alerts()
             
             # Update stats
             self._update_stats(sensor_result, weather_result)

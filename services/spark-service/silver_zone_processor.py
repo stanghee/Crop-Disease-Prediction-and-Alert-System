@@ -14,6 +14,7 @@ from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from pyspark.sql.window import Window
+from pyspark.sql.functions import to_json, struct
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,8 @@ class SilverZoneProcessor:
         self.bronze_path = os.getenv("BRONZE_PATH", "s3a://bronze/")
         # Silver path where cleaned data will be stored. Can be set e.g. SILVER_PATH="s3a://silver/"
         self.silver_path = os.getenv("SILVER_PATH", "s3a://silver/")
+        # Kafka configuration for valid data topics
+        self.kafka_bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
         # Explicit schemas for streaming sources
         self.sensor_schema = StructType([
             StructField("humidity", DoubleType(), True),
@@ -109,6 +112,7 @@ class SilverZoneProcessor:
         """
         Structured Streaming: process IoT sensor data from Bronze to Silver in real-time.
         Reads new JSON files as they arrive, applies validation, and writes valid records to Silver as Parquet.
+        Also sends validated data to Kafka topic 'iot_valid_data' for real-time alerting.
         Returns the streaming query handle.
         """
         logger.info("[STREAMING] Starting Silver streaming for sensors...")
@@ -140,7 +144,9 @@ class SilverZoneProcessor:
                 .withColumn("humidity_valid", when((col("humidity") >= 0) & (col("humidity") <= 100), True).otherwise(False)) \
                 .withColumn("ph_valid", when((col("soil_ph") >= 3.0) & (col("soil_ph") <= 9.0), True).otherwise(False)) \
                 .filter(col("temperature_valid") & col("humidity_valid") & col("ph_valid"))
-            query = silver_stream.writeStream \
+            
+            # Write to Silver zone (Parquet)
+            silver_query = silver_stream.writeStream \
                 .outputMode("append") \
                 .format("parquet") \
                 .option("path", f"{self.silver_path}iot/") \
@@ -148,8 +154,32 @@ class SilverZoneProcessor:
                 .partitionBy("date", "field_id") \
                 .trigger(processingTime="1 minute") \
                 .start()
-            logger.info("[STREAMING] Sensor Silver streaming started successfully")
-            return query
+            
+            # Send validated data to Kafka for real-time alerting
+            kafka_stream = silver_stream.select(
+                to_json(struct(
+                    col("field_id"),
+                    col("temperature"),
+                    col("humidity"),
+                    col("soil_ph"),
+                    col("temperature_valid"),
+                    col("humidity_valid"),
+                    col("ph_valid"),
+                    col("timestamp_parsed").alias("timestamp")
+                )).alias("value")
+            )
+            
+            kafka_query = kafka_stream.writeStream \
+                .outputMode("append") \
+                .format("kafka") \
+                .option("kafka.bootstrap.servers", self.kafka_bootstrap_servers) \
+                .option("topic", "iot_valid_data") \
+                .option("checkpointLocation", f"{self.silver_path}iot/_kafka_checkpoints/") \
+                .trigger(processingTime="1 minute") \
+                .start()
+            
+            logger.info("[STREAMING] Sensor Silver streaming started successfully (Parquet + Kafka)")
+            return silver_query, kafka_query
         except Exception as e:
             logger.error(f"[STREAMING] Error starting sensor Silver streaming: {e}")
             return None
@@ -158,6 +188,7 @@ class SilverZoneProcessor:
         """
         Structured Streaming: process weather data from Bronze to Silver in real-time.
         Reads new JSON files as they arrive, applies validation, and writes valid records to Silver as Parquet.
+        Also sends validated data to Kafka topic 'weather_valid_data' for real-time alerting.
         Returns the streaming query handle.
         """
         logger.info("[STREAMING] Starting Silver streaming for weather...")
@@ -188,7 +219,9 @@ class SilverZoneProcessor:
                 .withColumn("humidity_valid", when((col("humidity") >= 0) & (col("humidity") <= 100), True).otherwise(False)) \
                 .withColumn("coordinates_valid", when(col("lat").isNotNull() & col("lon").isNotNull() & (col("lat") >= -90) & (col("lat") <= 90) & (col("lon") >= -180) & (col("lon") <= 180), True).otherwise(False)) \
                 .filter(col("temp_valid") & col("humidity_valid") & col("coordinates_valid"))
-            query = silver_stream.writeStream \
+            
+            # Write to Silver zone (Parquet)
+            silver_query = silver_stream.writeStream \
                 .outputMode("append") \
                 .format("parquet") \
                 .option("path", f"{self.silver_path}weather/") \
@@ -196,8 +229,32 @@ class SilverZoneProcessor:
                 .partitionBy("date", "location") \
                 .trigger(processingTime="1 minute") \
                 .start()
-            logger.info("[STREAMING] Weather Silver streaming started successfully")
-            return query
+            
+            # Send validated data to Kafka for real-time alerting
+            kafka_stream = silver_stream.select(
+                to_json(struct(
+                    col("location"),
+                    col("temp_c"),
+                    col("humidity"),
+                    col("wind_kph"),
+                    col("temp_valid"),
+                    col("humidity_valid"),
+                    col("coordinates_valid"),
+                    col("timestamp_parsed").alias("timestamp")
+                )).alias("value")
+            )
+            
+            kafka_query = kafka_stream.writeStream \
+                .outputMode("append") \
+                .format("kafka") \
+                .option("kafka.bootstrap.servers", self.kafka_bootstrap_servers) \
+                .option("topic", "weather_valid_data") \
+                .option("checkpointLocation", f"{self.silver_path}weather/_kafka_checkpoints/") \
+                .trigger(processingTime="1 minute") \
+                .start()
+            
+            logger.info("[STREAMING] Weather Silver streaming started successfully (Parquet + Kafka)")
+            return silver_query, kafka_query
         except Exception as e:
             logger.error(f"[STREAMING] Error starting weather Silver streaming: {e}")
             return None

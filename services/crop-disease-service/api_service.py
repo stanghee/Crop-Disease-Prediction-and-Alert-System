@@ -361,6 +361,20 @@ class APIService:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
         
+        @self.router.post("/models/retrain")
+        async def retrain_models():
+            """Retrain ML models with synthetic data"""
+            try:
+                # Force retraining of disease predictor
+                self.ml_service.disease_predictor._train_initial_model()
+                return {
+                    "status": "success",
+                    "message": "Models retrained successfully",
+                    "timestamp": datetime.now().isoformat()
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        
 
         
         # System endpoints

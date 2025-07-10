@@ -20,4 +20,7 @@ uvicorn==0.24.0
 pydantic==2.5.0
 
 # Scheduling and Background Tasks
-apscheduler==3.10.4 
+apscheduler==3.10.4
+
+# Kafka Consumer
+kafka-python==2.0.2 
