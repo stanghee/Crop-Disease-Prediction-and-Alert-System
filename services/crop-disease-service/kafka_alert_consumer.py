@@ -364,7 +364,7 @@ class KafkaAlertConsumer:
     
     def _should_generate_alert(self, condition: AlertCondition) -> bool:
         """Check if alert should be generated (rate limiting and duplicates)"""
-        current_time = datetime.now()
+        current_time = datetime.now(ZoneInfo('Europe/Rome'))
         
         # Create unique identifier for this violation
         violation_id = f"{condition.zone_id}_{condition.alert_type}_{condition.value}_{condition.timestamp}"
@@ -403,9 +403,7 @@ class KafkaAlertConsumer:
                 if violation_time.tzinfo is None:
                     violation_time = violation_time.replace(tzinfo=timezone.utc)
             
-            # Ensure current_time is also timezone-aware (use Europe/Rome)
-            if current_time.tzinfo is None:
-                current_time = current_time.replace(tzinfo=ZoneInfo('Europe/Rome'))
+            # current_time is already timezone-aware (Europe/Rome)
             
             time_diff = (current_time - violation_time).total_seconds()
             if time_diff > 60:  # 1 minute
