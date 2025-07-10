@@ -49,14 +49,14 @@ FIELD_CONFIG = {
 }
 
 
-# === FUNZIONI AUSILIARIE ===
+# === HELPER FUNCTIONS ===
 def generate_value(config):
     if config["dist"] == "gauss":
         return round(random.gauss(config["mean"], config["std"]), 2)
     elif config["dist"] == "uniform":
         return round(random.uniform(config["low"], config["high"]), 2)
     else:
-        raise ValueError("Distribuzione non supportata")
+        raise ValueError("Unsupported distribution")
 
 def inject_anomaly(sensor_type, value):
     """Inject anomalous values to simulate malfunctions or extreme conditions"""

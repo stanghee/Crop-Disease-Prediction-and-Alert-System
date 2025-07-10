@@ -30,7 +30,7 @@ bbox = [
     float(os.getenv('BBOX_MAX_LAT', '45.281667'))
 ]
 
-# === AUTENTICAZIONE ===
+# === AUTHENTICATION ===
 def get_oauth_session():
     client = BackendApplicationClient(client_id=client_id)
     oauth = OAuth2Session(client=client)
@@ -41,7 +41,7 @@ def get_oauth_session():
     )
     return oauth
 
-# === EVALSCRIPT RGB ===
+# === RGB EVALSCRIPT ===
 evalscript_rgb = """
 //VERSION=3
 function clamp(value, min, max) {
@@ -62,11 +62,11 @@ function evaluatePixel(sample) {
 }
 """
 
-# === FUNZIONE PRINCIPALE ===
+# === MAIN FUNCTION ===
 def fetch_and_send():
     rome_tz = ZoneInfo("Europe/Rome")
     current_time = datetime.now(rome_tz)
-    print("📡 Acquisizione immagine:", current_time, flush=True)
+    print("📡 Acquiring image:", current_time, flush=True)
     oauth = get_oauth_session()
 
     request = {
@@ -101,11 +101,11 @@ def fetch_and_send():
     response_rgb = oauth.post(process_url, json=request)
 
     if response_rgb.status_code != 200:
-        print(f"❌ Error immagine RGB {response_rgb.status_code}", flush=True)
+        print(f"❌ RGB image error {response_rgb.status_code}", flush=True)
         print(response_rgb.text)
         return
 
-    # Converti immagine RGB in base64
+    # Convert RGB image to base64
     img_rgb = Image.open(BytesIO(response_rgb.content))
     buffered = BytesIO()
     img_rgb.save(buffered, format="PNG")
@@ -133,11 +133,11 @@ def fetch_and_send():
 # === EXECUTE IMMEDIATELY ===
 fetch_and_send()
 
-# === OGNI MINUTO === 
+# === EVERY MINUTE === 
 # Because we are supposed to use drone to get the image, but it is costly so we use satellite
 schedule.every(1).minutes.do(fetch_and_send)
 
-print("⏱ In ascolto ogni minuto...", flush=True)
+print("⏱ Listening every minute...", flush=True)
 while True:
     schedule.run_pending()
     time.sleep(1)

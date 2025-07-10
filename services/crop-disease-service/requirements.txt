@@ -1,0 +1,26 @@
+# ML Service Dependencies
+pyspark==3.5.0
+delta-spark==3.0.0
+minio==7.2.0
+psycopg2-binary==2.9.9
+pandas==2.0.3
+python-dotenv==1.0.0
+requests==2.31.0
+pytz==2023.3
+
+# Machine Learning Libraries
+scikit-learn==1.3.0
+xgboost==1.7.6
+numpy==1.24.3
+joblib==1.3.2
+
+# API and Web Framework
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+
+# Scheduling and Background Tasks
+apscheduler==3.10.4
+
+# Kafka Consumer
+kafka-python==2.0.2 

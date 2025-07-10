@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Gold Zone Processor - ML Features and Business KPIs
-Processes Silver zone data into ML-ready features and dashboard metrics
+Gold Zone Processor - Dashboard Metrics, Business KPIs and ML Features
+Processes Silver zone data into organized Gold zone structure:
+- sensor_metrics/ - Sensor dashboard metrics
+- weather_metrics/ - Weather dashboard metrics  
+- satellite_metrics/ - Satellite dashboard metrics
+- ml_features/ - Machine Learning features
 """
 
 import os
@@ -19,7 +23,9 @@ logger = logging.getLogger(__name__)
 
 class GoldZoneProcessor:
     """
-    Processes Silver zone data into Gold zone ML features and KPIs
+    Processes Silver zone data into organized Gold zone structure:
+    - Dashboard metrics per data source
+    - ML features for machine learning pipelines
     """
     
     def __init__(self, spark: SparkSession):
@@ -27,27 +33,409 @@ class GoldZoneProcessor:
         self.silver_path = "s3a://silver/"
         self.gold_path = "s3a://gold/"
     
-    def create_sensor_ml_features(self, batch_date: Optional[str] = None) -> DataFrame:
+    # =================== SENSOR METRICS ===================
+    
+    def create_sensor_recent_metrics(self) -> DataFrame:
         """
-        Create ML features from sensor data
-        - Daily aggregations per field
-        - Statistical features
-        - Risk scoring
+        Create recent sensor metrics for dashboard (last 30 minutes)
+        - Current status per field
+        - Recent readings and data validity
+        - Performance indicators
+        """
+        logger.info("Creating sensor recent metrics for Gold zone...")
+        
+        # Calculate timestamp for 30 minutes ago
+        thirty_minutes_ago = datetime.now() - timedelta(minutes=30)
+        
+        # Read from Silver zone - last 30 minutes
+        silver_df = self.spark.read.parquet(f"{self.silver_path}iot/") \
+            .filter(col("timestamp_parsed") >= thirty_minutes_ago)
+        
+        # Latest reading per field
+        window_latest = Window.partitionBy("field_id").orderBy(desc("timestamp_parsed"))
+        
+        # Get latest values per field using window function
+        latest_values = silver_df \
+            .withColumn("row_number", row_number().over(window_latest)) \
+            .filter(col("row_number") == 1) \
+            .select("field_id", "temperature", "humidity", "soil_ph", "timestamp_parsed") \
+            .withColumnRenamed("temperature", "current_temperature") \
+            .withColumnRenamed("humidity", "current_humidity") \
+            .withColumnRenamed("soil_ph", "current_soil_ph") \
+            .withColumnRenamed("timestamp_parsed", "last_reading_time")
+        
+        # 30-minute aggregations per field
+        recent_metrics = silver_df \
+            .groupBy("field_id") \
+            .agg(
+                
+                # Statistical aggregations
+                avg("temperature").alias("avg_temperature_30min"),
+                stddev("temperature").alias("std_temperature_30min"),
+                min("temperature").alias("min_temperature_30min"),
+                max("temperature").alias("max_temperature_30min"),
+                
+                avg("humidity").alias("avg_humidity_30min"),
+                stddev("humidity").alias("std_humidity_30min"),
+                min("humidity").alias("min_humidity_30min"),
+                max("humidity").alias("max_humidity_30min"),
+                
+                avg("soil_ph").alias("avg_soil_ph_30min"),
+                stddev("soil_ph").alias("std_soil_ph_30min"),
+                
+                # Data validity
+                avg(col("temperature_valid").cast("int")).alias("temperature_valid_rate_30min"),
+                avg(col("humidity_valid").cast("int")).alias("humidity_valid_rate_30min"),
+                avg(col("ph_valid").cast("int")).alias("ph_valid_rate_30min"),
+                
+                # Data quality tracking (using invalid data as proxy for anomalies)
+                sum(when(~col("temperature_valid"), 1).otherwise(0)).alias("temp_invalid_count_30min"),
+                sum(when(~col("humidity_valid"), 1).otherwise(0)).alias("humidity_invalid_count_30min"),
+                sum(when(~col("ph_valid"), 1).otherwise(0)).alias("ph_invalid_count_30min"),
+                count("*").alias("readings_count_30min")
+            ) \
+            .withColumn(
+                "temp_range_30min", col("max_temperature_30min") - col("min_temperature_30min")
+            ) \
+            .withColumn(
+                "humidity_range_30min", col("max_humidity_30min") - col("min_humidity_30min")
+            ) \
+            .withColumn(
+                "anomaly_count_30min", col("temp_invalid_count_30min") + col("humidity_invalid_count_30min") + col("ph_invalid_count_30min")
+            ) \
+            .withColumn(
+                "anomaly_rate_30min", col("anomaly_count_30min") / col("readings_count_30min")
+            ) \
+            .withColumn(
+                # Status indicators (based on data quality)
+                "status",
+                when((col("temperature_valid_rate_30min") < 0.8) | (col("humidity_valid_rate_30min") < 0.8) | (col("ph_valid_rate_30min") < 0.8), "DATA_ISSUE")
+                .when(col("anomaly_rate_30min") > 0.1, "HIGH_RISK")
+                .when(col("anomaly_rate_30min") > 0.05, "MEDIUM_RISK")
+                .otherwise("HEALTHY")
+            ) \
+            .withColumn("created_at", current_timestamp())
+        
+        # Join aggregated metrics with latest values
+        final_metrics = recent_metrics.join(latest_values, "field_id", "inner") \
+            .withColumn(
+                "data_freshness_minutes",
+                (unix_timestamp(current_timestamp()) - unix_timestamp(col("last_reading_time"))) / 60
+            ) \
+            .withColumn(
+                "is_online",
+                when(col("data_freshness_minutes") <= 5, True).otherwise(False)
+            )
+        
+        # Write to organized Gold zone path
+        final_metrics.write \
+            .format("delta") \
+            .mode("append") \
+            .option("mergeSchema", "true") \
+            .save(f"{self.gold_path}sensor_metrics/recent/")
+        
+        logger.info(f"Created {final_metrics.count()} sensor recent metric records")
+        return final_metrics
+    
+    def create_sensor_hourly_aggregations(self) -> DataFrame:
+        """
+        Create hourly sensor aggregations for trend analysis
+        - Hourly statistics per field
+        - Trend indicators
+        - Performance tracking
+        """
+        logger.info("Creating sensor hourly aggregations for Gold zone...")
+        
+        # Read from Silver zone - last 24 hours
+        twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
+        
+        silver_df = self.spark.read.parquet(f"{self.silver_path}iot/") \
+            .filter(col("timestamp_parsed") >= twenty_four_hours_ago)
+        
+        # Hourly aggregations per field
+        hourly_metrics = silver_df \
+            .groupBy("field_id", "date", "hour") \
+            .agg(
+                # Temperature metrics
+                avg("temperature").alias("avg_temperature"),
+                stddev("temperature").alias("std_temperature"),
+                min("temperature").alias("min_temperature"),
+                max("temperature").alias("max_temperature"),
+                
+                # Humidity metrics
+                avg("humidity").alias("avg_humidity"),
+                stddev("humidity").alias("std_humidity"),
+                min("humidity").alias("min_humidity"),
+                max("humidity").alias("max_humidity"),
+                
+                # Soil pH metrics
+                avg("soil_ph").alias("avg_soil_ph"),
+                stddev("soil_ph").alias("std_soil_ph"),
+                
+                # Data validity
+                avg(col("temperature_valid").cast("int")).alias("temperature_valid_rate"),
+                avg(col("humidity_valid").cast("int")).alias("humidity_valid_rate"),
+                avg(col("ph_valid").cast("int")).alias("ph_valid_rate"),
+                
+                # Data quality tracking (using invalid data as proxy for anomalies)
+                sum(when(~col("temperature_valid"), 1).otherwise(0)).alias("temp_invalid_count"),
+                sum(when(~col("humidity_valid"), 1).otherwise(0)).alias("humidity_invalid_count"),
+                sum(when(~col("ph_valid"), 1).otherwise(0)).alias("ph_invalid_count"),
+                count("*").alias("readings_count")
+            ) \
+            .withColumn(
+                "temp_range", col("max_temperature") - col("min_temperature")
+            ) \
+            .withColumn(
+                "humidity_range", col("max_humidity") - col("min_humidity")
+            ) \
+            .withColumn(
+                "anomaly_count", col("temp_invalid_count") + col("humidity_invalid_count") + col("ph_invalid_count")
+            ) \
+            .withColumn(
+                "anomaly_rate", col("anomaly_count") / col("readings_count")
+            ) \
+            .withColumn(
+                # Hourly data quality assessment
+                "hourly_quality_status",
+                when((col("temperature_valid_rate") < 0.8) | (col("humidity_valid_rate") < 0.8) | (col("ph_valid_rate") < 0.8), "DATA_ISSUE")
+                .otherwise("VALID")
+            ) \
+            .withColumn("created_at", current_timestamp())
+        
+        # Write to organized Gold zone path
+        hourly_metrics.write \
+            .format("delta") \
+            .mode("append") \
+            .option("mergeSchema", "true") \
+            .save(f"{self.gold_path}sensor_metrics/hourly/")
+        
+        logger.info(f"Created {hourly_metrics.count()} sensor hourly aggregation records")
+        return hourly_metrics
+    
+    def create_sensor_alert_summary(self) -> DataFrame:
+        """
+        Create sensor alert summary (data quality and anomaly alerts)
+        """
+        logger.info("Creating sensor alert summary for Gold zone...")
+        
+        silver_df = self.spark.read.parquet(f"{self.silver_path}iot/")
+        
+        alert_summary = silver_df \
+            .groupBy("field_id") \
+            .agg(
+                count(when(~col("temperature_valid"), True)).alias("invalid_temperature_count"),
+                count(when(~col("humidity_valid"), True)).alias("invalid_humidity_count"),
+                count(when(~col("ph_valid"), True)).alias("invalid_ph_count"),
+                count("*").alias("total_readings")
+            ) \
+            .withColumn(
+                "total_anomalies", col("invalid_temperature_count") + col("invalid_humidity_count") + col("invalid_ph_count")
+            ) \
+            .withColumn(
+                "invalid_rate",
+                (col("invalid_temperature_count") + col("invalid_humidity_count") + col("invalid_ph_count")) / (col("total_readings") * 3)
+            ) \
+            .withColumn(
+                "anomaly_rate",
+                col("total_anomalies") / col("total_readings")
+            ) \
+            .withColumn(
+                "alert_status",
+                when((col("invalid_rate") > 0.2) | (col("anomaly_rate") > 0.1), "HIGH")
+                .when((col("invalid_rate") > 0.05) | (col("anomaly_rate") > 0.05), "MEDIUM")
+                .otherwise("LOW")
+            ) \
+            .withColumn("created_at", current_timestamp())
+        
+        alert_summary.write \
+            .format("delta") \
+            .mode("overwrite") \
+            .option("mergeSchema", "true") \
+            .save(f"{self.gold_path}sensor_metrics/alerts/")
+        
+        logger.info(f"Created {alert_summary.count()} sensor alert summary records")
+        return alert_summary
+    
+    def create_sensor_performance_ranking(self) -> DataFrame:
+        """
+        Create sensor field performance ranking (based on data validity and anomaly rates)
+        """
+        logger.info("Creating sensor field performance ranking for Gold zone...")
+        
+        silver_df = self.spark.read.parquet(f"{self.silver_path}iot/")
+        
+        performance_ranking = silver_df \
+            .groupBy("field_id") \
+            .agg(
+                avg(col("temperature_valid").cast("int")).alias("temperature_valid_rate"),
+                avg(col("humidity_valid").cast("int")).alias("humidity_valid_rate"),
+                avg(col("ph_valid").cast("int")).alias("ph_valid_rate"),
+                count(when(~col("temperature_valid"), True)).alias("invalid_temperature_count"),
+                count(when(~col("humidity_valid"), True)).alias("invalid_humidity_count"),
+                count(when(~col("ph_valid"), True)).alias("invalid_ph_count"),
+                count("*").alias("total_readings")
+            ) \
+            .withColumn(
+                "total_anomalies", col("invalid_temperature_count") + col("invalid_humidity_count") + col("invalid_ph_count")
+            ) \
+            .withColumn(
+                "anomaly_rate",
+                col("total_anomalies") / col("total_readings")
+            ) \
+            .withColumn(
+                "data_validity_score",
+                (col("temperature_valid_rate") + col("humidity_valid_rate") + col("ph_valid_rate")) / 3 * 100
+            ) \
+            .withColumn(
+                "anomaly_score",
+                (1 - col("anomaly_rate")) * 100  # Lower anomaly rate = higher score
+            ) \
+            .withColumn(
+                "overall_performance_score",
+                (col("data_validity_score") * 0.7 + col("anomaly_score") * 0.3)  # Weighted average
+            ) \
+            .withColumn(
+                "performance_grade",
+                when(col("overall_performance_score") >= 90, "A")
+                .when(col("overall_performance_score") >= 80, "B")
+                .when(col("overall_performance_score") >= 70, "C")
+                .when(col("overall_performance_score") >= 60, "D")
+                .otherwise("F")
+            ) \
+            .withColumn(
+                "performance_rank",
+                rank().over(Window.orderBy(desc("overall_performance_score")))
+            ) \
+            .withColumn("created_at", current_timestamp())
+        
+        performance_ranking.write \
+            .format("delta") \
+            .mode("overwrite") \
+            .option("mergeSchema", "true") \
+            .save(f"{self.gold_path}sensor_metrics/performance/")
+        
+        logger.info(f"Created {performance_ranking.count()} sensor field performance ranking records")
+        return performance_ranking
+    
+    def create_sensor_overview(self) -> DataFrame:
+        """
+        Create sensor dashboard overview metrics
+        - System-wide statistics
+        - Overall health indicators
+        - Summary KPIs
+        """
+        logger.info("Creating sensor dashboard overview for Gold zone...")
+        
+        # Read performance ranking
+        ranking_df = self.spark.read.format("delta").load(f"{self.gold_path}sensor_metrics/performance/")
+        
+        # Calculate overview metrics
+        overview_stats = ranking_df.agg(
+            count("*").alias("total_fields"),
+            sum(when(col("performance_grade") == "A", 1).otherwise(0)).alias("grade_a_fields"),
+            sum(when(col("performance_grade") == "B", 1).otherwise(0)).alias("grade_b_fields"),
+            sum(when(col("performance_grade") == "C", 1).otherwise(0)).alias("grade_c_fields"),
+            sum(when(col("performance_grade") == "D", 1).otherwise(0)).alias("grade_d_fields"),
+            sum(when(col("performance_grade") == "F", 1).otherwise(0)).alias("grade_f_fields"),
+            avg("overall_performance_score").alias("avg_performance_score"),
+            avg("data_validity_score").alias("avg_data_validity_score"),
+            avg("anomaly_score").alias("avg_anomaly_score"),
+            avg("temperature_valid_rate").alias("avg_temperature_valid_rate"),
+            avg("humidity_valid_rate").alias("avg_humidity_valid_rate"),
+            avg("ph_valid_rate").alias("avg_ph_valid_rate")
+        ) \
+        .withColumn("created_at", current_timestamp())
+        
+        # Write to organized Gold zone path
+        overview_stats.write \
+            .format("delta") \
+            .mode("overwrite") \
+            .option("mergeSchema", "true") \
+            .save(f"{self.gold_path}sensor_metrics/overview/")
+        
+        logger.info(f"Created sensor dashboard overview record")
+        return overview_stats
+    
+    # =================== WEATHER METRICS ===================
+    
+    def create_weather_monthly_stats(self) -> DataFrame:
+        """
+        Create weather monthly statistics for dashboard
+        - Monthly weather statistics per location (rolling 30 days)
+        - Weather pattern analysis
+        """
+        logger.info("Creating weather monthly statistics for Gold zone...")
+        
+        # Read from Silver zone - last 30 days
+        thirty_days_ago = datetime.now() - timedelta(days=30)
+        
+        try:
+            silver_df = self.spark.read.parquet(f"{self.silver_path}weather/") \
+                .filter(col("timestamp_parsed") >= thirty_days_ago)
+            
+            # Monthly statistics per location (rolling 30 days)
+            monthly_weather = silver_df \
+                .groupBy("location", "date") \
+                .agg(
+                    avg("temp_c").alias("avg_temperature"),
+                    max("temp_c").alias("max_temperature"),
+                    min("temp_c").alias("min_temperature"),
+                    avg("humidity").alias("avg_humidity"),
+                    max("humidity").alias("max_humidity"),
+                    min("humidity").alias("min_humidity"),
+                    avg("wind_kph").alias("avg_wind_speed"),
+                    max("wind_kph").alias("max_wind_speed"),
+                    avg("uv").alias("avg_uv_index"),
+                    max("uv").alias("max_uv_index"),
+                    mode("condition").alias("dominant_condition"),
+                    count("*").alias("readings_count")
+                ) \
+                .withColumn(
+                    "temperature_range", col("max_temperature") - col("min_temperature")
+                ) \
+                .withColumn(
+                    "humidity_range", col("max_humidity") - col("min_humidity")
+                ) \
+                .withColumn("created_at", current_timestamp())
+            
+            # Write to organized Gold zone path
+            monthly_weather.write \
+                .format("delta") \
+                .mode("append") \
+                .option("mergeSchema", "true") \
+                .save(f"{self.gold_path}weather_metrics/monthly_stats/")
+            
+            logger.info(f"Created {monthly_weather.count()} weather monthly statistics records")
+            return monthly_weather
+            
+        except Exception as e:
+            logger.warning(f"Weather data not available for processing: {e}")
+            # Return empty DataFrame with expected schema
+            schema = StructType([
+                StructField("location", StringType(), True),
+                StructField("date", DateType(), True),
+                StructField("avg_temperature", DoubleType(), True),
+                StructField("created_at", TimestampType(), True)
+            ])
+            return self.spark.createDataFrame([], schema)
+    
+
+    
+    # =================== ML FEATURES ===================
+    
+    def create_sensor_ml_features(self) -> DataFrame:
+        """
+        Create sensor ML features for machine learning models
+        - Daily aggregations per field with statistical features
+        - Risk scoring and anomaly indicators
         """
         logger.info("Creating sensor ML features for Gold zone...")
         
-        # Read Silver sensor data
-        silver_df = self.spark.read.parquet(f"{self.silver_path}sensor_data/")
+        silver_df = self.spark.read.parquet(f"{self.silver_path}iot/")
         
-        # Filter by date if specified (default: last 30 days)
-        if batch_date:
-            silver_df = silver_df.filter(col("date") == batch_date)
-        else:
-            cutoff_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-            silver_df = silver_df.filter(col("date") >= cutoff_date)
-        
-        # Create daily aggregations per field
-        daily_features = silver_df \
+        # ML Features - Daily aggregations with comprehensive statistics
+        ml_features = silver_df \
             .groupBy("field_id", "date") \
             .agg(
                 # Temperature features
@@ -55,16 +443,12 @@ class GoldZoneProcessor:
                 stddev("temperature").alias("std_temperature"),
                 min("temperature").alias("min_temperature"),
                 max("temperature").alias("max_temperature"),
-                percentile_approx("temperature", 0.25).alias("q25_temperature"),
-                percentile_approx("temperature", 0.75).alias("q75_temperature"),
                 
                 # Humidity features
                 avg("humidity").alias("avg_humidity"),
                 stddev("humidity").alias("std_humidity"),
                 min("humidity").alias("min_humidity"),
                 max("humidity").alias("max_humidity"),
-                percentile_approx("humidity", 0.25).alias("q25_humidity"),
-                percentile_approx("humidity", 0.75).alias("q75_humidity"),
                 
                 # Soil pH features
                 avg("soil_ph").alias("avg_soil_ph"),
@@ -72,461 +456,414 @@ class GoldZoneProcessor:
                 min("soil_ph").alias("min_soil_ph"),
                 max("soil_ph").alias("max_soil_ph"),
                 
-                # Data quality and anomaly features
-                avg("data_quality_score").alias("avg_data_quality"),
-                sum(when(col("has_anomaly"), 1).otherwise(0)).alias("anomaly_count"),
-                sum(when(col("temperature_anomaly"), 1).otherwise(0)).alias("temp_anomaly_count"),
-                sum(when(col("humidity_anomaly"), 1).otherwise(0)).alias("humidity_anomaly_count"),
-                sum(when(col("ph_anomaly"), 1).otherwise(0)).alias("ph_anomaly_count"),
-                count("*").alias("total_readings"),
+                # Data quality features
+                avg(col("temperature_valid").cast("int")).alias("temperature_valid_rate"),
+                avg(col("humidity_valid").cast("int")).alias("humidity_valid_rate"),
+                avg(col("ph_valid").cast("int")).alias("ph_valid_rate"),
                 
-                # Rolling statistics features
-                avg("temp_rolling_avg").alias("avg_temp_rolling_avg"),
-                avg("temp_deviation_from_avg").alias("avg_temp_deviation"),
-                avg("humidity_deviation_from_avg").alias("avg_humidity_deviation"),
-                
-                # Temporal features
-                first("year").alias("year"),
-                first("month").alias("month"),
-                first("day_of_week").alias("day_of_week")
+                # Data quality features (proxy for anomalies)
+                count(when(~col("temperature_valid"), True)).alias("temperature_invalid_count"),
+                count(when(~col("humidity_valid"), True)).alias("humidity_invalid_count"),
+                count(when(~col("ph_valid"), True)).alias("ph_invalid_count"),
+                count("*").alias("total_readings")
             ) \
             .withColumn(
-                # Calculate anomaly rates
-                "anomaly_rate", col("anomaly_count") / col("total_readings")
-            ) \
-            .withColumn(
-                "temp_anomaly_rate", col("temp_anomaly_count") / col("total_readings")
-            ) \
-            .withColumn(
-                "humidity_anomaly_rate", col("humidity_anomaly_count") / col("total_readings")
-            ) \
-            .withColumn(
-                "ph_anomaly_rate", col("ph_anomaly_count") / col("total_readings")
-            ) \
-            .withColumn(
-                # Temperature range and variability
-                "temp_range", col("max_temperature") - col("min_temperature")
-            ) \
-            .withColumn(
-                "temp_iqr", col("q75_temperature") - col("q25_temperature")
+                # Derived features
+                "temperature_range", col("max_temperature") - col("min_temperature")
             ) \
             .withColumn(
                 "humidity_range", col("max_humidity") - col("min_humidity")
             ) \
             .withColumn(
-                "humidity_iqr", col("q75_humidity") - col("q25_humidity")
+                "ph_range", col("max_soil_ph") - col("min_soil_ph")
             ) \
             .withColumn(
-                # Risk scoring based on anomaly rates and variability
-                "risk_score",
-                when(col("anomaly_rate") > 0.15, "HIGH")
-                .when(col("anomaly_rate") > 0.08, "MEDIUM")
+                "anomaly_count", col("temperature_invalid_count") + col("humidity_invalid_count") + col("ph_invalid_count")
+            ) \
+            .withColumn(
+                "anomaly_rate", col("anomaly_count") / col("total_readings")
+            ) \
+            .withColumn(
+                "data_quality_score", 
+                (col("temperature_valid_rate") + col("humidity_valid_rate") + col("ph_valid_rate")) / 3
+            ) \
+            .withColumn(
+                "risk_score", 
+                when(col("anomaly_rate") > 0.1, "HIGH")
+                .when(col("anomaly_rate") > 0.05, "MEDIUM")
                 .otherwise("LOW")
-            ) \
-            .withColumn(
-                "variability_score",
-                when((col("temp_range") > 20) | (col("humidity_range") > 50), "HIGH")
-                .when((col("temp_range") > 10) | (col("humidity_range") > 30), "MEDIUM")
-                .otherwise("LOW")
-            )
-        
-        # Add historical comparison features
-        window_spec = Window.partitionBy("field_id").orderBy("date").rowsBetween(-6, 0)
-        
-        ml_features = daily_features \
-            .withColumn("temp_7day_avg", avg("avg_temperature").over(window_spec)) \
-            .withColumn("humidity_7day_avg", avg("avg_humidity").over(window_spec)) \
-            .withColumn("ph_7day_avg", avg("avg_soil_ph").over(window_spec)) \
-            .withColumn("anomaly_7day_avg", avg("anomaly_rate").over(window_spec)) \
-            .withColumn(
-                "temp_trend_7day", 
-                col("avg_temperature") - lag("avg_temperature", 7).over(
-                    Window.partitionBy("field_id").orderBy("date")
-                )
-            ) \
-            .withColumn(
-                "humidity_trend_7day",
-                col("avg_humidity") - lag("avg_humidity", 7).over(
-                    Window.partitionBy("field_id").orderBy("date")
-                )
             ) \
             .withColumn("created_at", current_timestamp())
         
-        # Write to Gold zone as Delta table
+        # Write to organized Gold zone path
         ml_features.write \
             .format("delta") \
             .mode("overwrite") \
             .option("mergeSchema", "true") \
-            .save(f"{self.gold_path}sensor_ml_features/")
+            .save(f"{self.gold_path}ml_features/sensor/")
         
         logger.info(f"Created {ml_features.count()} sensor ML feature records")
         return ml_features
     
-    def create_sensor_dashboard_kpis(self) -> DataFrame:
+    def create_weather_ml_features(self) -> DataFrame:
         """
-        Create real-time KPIs for dashboard
-        - Current status per field
-        - Recent trends and alerts
-        """
-        logger.info("Creating sensor dashboard KPIs for Gold zone...")
-        
-        # Read Silver sensor data (last 7 days)
-        cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-        silver_df = self.spark.read.parquet(f"{self.silver_path}sensor_data/") \
-            .filter(col("date") >= cutoff_date)
-        
-        # Latest readings per field
-        window_latest = Window.partitionBy("field_id").orderBy(desc("timestamp_parsed"))
-        
-        latest_readings = silver_df \
-            .withColumn("row_num", row_number().over(window_latest)) \
-            .filter(col("row_num") == 1) \
-            .select(
-                "field_id",
-                "temperature",
-                "humidity", 
-                "soil_ph",
-                "timestamp_parsed",
-                "has_anomaly"
-            )
-        
-        # 7-day aggregations
-        weekly_stats = silver_df \
-            .groupBy("field_id") \
-            .agg(
-                avg("temperature").alias("week_avg_temp"),
-                avg("humidity").alias("week_avg_humidity"),
-                avg("soil_ph").alias("week_avg_ph"),
-                count(when(col("has_anomaly"), True)).alias("week_anomaly_count"),
-                count("*").alias("week_total_readings"),
-                max("timestamp_parsed").alias("last_reading_time")
-            ) \
-            .withColumn("week_anomaly_rate", 
-                       col("week_anomaly_count") / col("week_total_readings"))
-        
-        # Join latest readings with weekly stats
-        dashboard_kpis = latest_readings.alias("latest") \
-            .join(weekly_stats.alias("weekly"), "field_id", "inner") \
-            .select(
-                "field_id",
-                # Current readings
-                col("latest.temperature").alias("current_temperature"),
-                col("latest.humidity").alias("current_humidity"),
-                col("latest.soil_ph").alias("current_soil_ph"),
-                col("latest.timestamp_parsed").alias("last_update"),
-                col("latest.has_anomaly").alias("current_anomaly"),
-                
-                # Weekly trends
-                "week_avg_temp",
-                "week_avg_humidity", 
-                "week_avg_ph",
-                "week_anomaly_count",
-                "week_anomaly_rate",
-                "week_total_readings"
-            ) \
-            .withColumn(
-                # Status indicators
-                "temp_status",
-                when(col("current_temperature") < 10, "COLD")
-                .when(col("current_temperature") > 35, "HOT")
-                .otherwise("NORMAL")
-            ) \
-            .withColumn(
-                "humidity_status",
-                when(col("current_humidity") < 30, "DRY")
-                .when(col("current_humidity") > 80, "WET")
-                .otherwise("NORMAL")
-            ) \
-            .withColumn(
-                "ph_status",
-                when(col("current_soil_ph") < 6.0, "ACIDIC")
-                .when(col("current_soil_ph") > 7.5, "ALKALINE")
-                .otherwise("NORMAL")
-            ) \
-            .withColumn(
-                "overall_status",
-                when(col("current_anomaly") | (col("week_anomaly_rate") > 0.1), "ALERT")
-                .when(col("week_anomaly_rate") > 0.05, "WARNING")
-                .otherwise("HEALTHY")
-            ) \
-            .withColumn(
-                # Data freshness
-                "data_age_hours",
-                (unix_timestamp(current_timestamp()) - unix_timestamp("last_update")) / 3600
-            ) \
-            .withColumn(
-                "data_freshness",
-                when(col("data_age_hours") < 2, "FRESH")
-                .when(col("data_age_hours") < 6, "RECENT")
-                .otherwise("STALE")
-            ) \
-            .withColumn("created_at", current_timestamp())
-        
-        # Write to Gold zone as Delta table
-        dashboard_kpis.write \
-            .format("delta") \
-            .mode("overwrite") \
-            .save(f"{self.gold_path}sensor_dashboard_kpis/")
-        
-        logger.info(f"Created {dashboard_kpis.count()} dashboard KPI records")
-        return dashboard_kpis
-    
-    def create_weather_ml_features(self, batch_date: Optional[str] = None) -> DataFrame:
-        """
-        Create ML features from weather data
-        - Daily weather patterns
-        - Extreme weather indicators
+        Create weather ML features for machine learning models
+        - Daily weather aggregations with ML-ready features
         """
         logger.info("Creating weather ML features for Gold zone...")
         
-        # Read Silver weather data
-        silver_df = self.spark.read.parquet(f"{self.silver_path}weather_data/")
-        
-        # Filter by date if specified
-        if batch_date:
-            silver_df = silver_df.filter(col("date") == batch_date)
-        else:
-            cutoff_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-            silver_df = silver_df.filter(col("date") >= cutoff_date)
-        
-        # Daily weather aggregations
-        weather_features = silver_df \
-            .groupBy("location", "date") \
-            .agg(
-                # Temperature features
-                avg("temp_c").alias("avg_temperature"),
-                max("temp_c").alias("max_temperature"),
-                min("temp_c").alias("min_temperature"),
-                stddev("temp_c").alias("temp_variability"),
-                
-                # Humidity and comfort
-                avg("humidity").alias("avg_humidity"),
-                max("humidity").alias("max_humidity"),
-                min("humidity").alias("min_humidity"),
-                
-                # Wind and weather dynamics
-                avg("wind_kph").alias("avg_wind_speed"),
-                max("wind_kph").alias("max_wind_speed"),
-                avg("uv").alias("avg_uv_index"),
-                max("uv").alias("max_uv_index"),
-                
-                # Weather conditions
-                first("weather_category").alias("dominant_weather_category"),
-                avg("weather_severity_score").alias("avg_weather_severity"),
-                max("weather_severity_score").alias("max_weather_severity"),
-                
-                # Data quality
-                avg("data_quality_score").alias("avg_data_quality"),
-                count("*").alias("total_readings"),
-                
-                # Geographic info
-                first("lat").alias("latitude"),
-                first("lon").alias("longitude"),
-                first("region").alias("region"),
-                first("country").alias("country")
-            ) \
-            .withColumn("temp_range", col("max_temperature") - col("min_temperature")) \
-            .withColumn("humidity_range", col("max_humidity") - col("min_humidity")) \
-            .withColumn(
-                "extreme_weather_score",
-                when((col("max_temperature") > 40) | (col("min_temperature") < 0) | 
-                     (col("max_wind_speed") > 50) | (col("max_uv_index") > 10), 3)
-                .when((col("max_temperature") > 35) | (col("min_temperature") < 5) |
-                      (col("max_wind_speed") > 30) | (col("max_uv_index") > 8), 2)
-                .when((col("max_temperature") > 30) | (col("min_temperature") < 10) |
-                      (col("max_wind_speed") > 20) | (col("max_uv_index") > 6), 1)
-                .otherwise(0)
-            ) \
-            .withColumn("created_at", current_timestamp())
-        
-        # Write to Gold zone as Delta table
-        weather_features.write \
-            .format("delta") \
-            .mode("overwrite") \
-            .option("mergeSchema", "true") \
-            .save(f"{self.gold_path}weather_ml_features/")
-        
-        logger.info(f"Created {weather_features.count()} weather ML feature records")
-        return weather_features
+        try:
+            silver_df = self.spark.read.parquet(f"{self.silver_path}weather/")
+            
+            # Weather ML Features - Daily aggregations
+            weather_features = silver_df \
+                .groupBy("location", "date") \
+                .agg(
+                    # Temperature features
+                    avg("temp_c").alias("avg_temperature"),
+                    stddev("temp_c").alias("std_temperature"),
+                    max("temp_c").alias("max_temperature"),
+                    min("temp_c").alias("min_temperature"),
+                    
+                    # Humidity features
+                    avg("humidity").alias("avg_humidity"),
+                    stddev("humidity").alias("std_humidity"),
+                    max("humidity").alias("max_humidity"),
+                    min("humidity").alias("min_humidity"),
+                    
+                    # Wind features
+                    avg("wind_kph").alias("avg_wind_speed"),
+                    stddev("wind_kph").alias("std_wind_speed"),
+                    max("wind_kph").alias("max_wind_speed"),
+                    
+                    # UV features
+                    avg("uv").alias("avg_uv_index"),
+                    max("uv").alias("max_uv_index"),
+                    
+                    # Condition features
+                    mode("condition").alias("dominant_condition"),
+                    count("*").alias("readings_count")
+                ) \
+                .withColumn(
+                    # Derived features for ML
+                    "temperature_range", col("max_temperature") - col("min_temperature")
+                ) \
+                .withColumn(
+                    "humidity_range", col("max_humidity") - col("min_humidity")
+                ) \
+                .withColumn(
+                    # Weather stability indicators
+                    "temperature_stability",
+                    when(col("std_temperature") < 2, "STABLE")
+                    .when(col("std_temperature") < 5, "MODERATE")
+                    .otherwise("UNSTABLE")
+                ) \
+                .withColumn(
+                    "wind_category",
+                    when(col("avg_wind_speed") < 10, "CALM")
+                    .when(col("avg_wind_speed") < 20, "MODERATE")
+                    .otherwise("STRONG")
+                ) \
+                .withColumn("created_at", current_timestamp())
+            
+            # Write to organized Gold zone path
+            weather_features.write \
+                .format("delta") \
+                .mode("overwrite") \
+                .option("mergeSchema", "true") \
+                .save(f"{self.gold_path}ml_features/weather/")
+            
+            logger.info(f"Created {weather_features.count()} weather ML feature records")
+            return weather_features
+            
+        except Exception as e:
+            logger.warning(f"Weather ML features creation failed: {e}")
+            # Return empty DataFrame with expected schema
+            schema = StructType([
+                StructField("location", StringType(), True),
+                StructField("date", DateType(), True),
+                StructField("avg_temperature", DoubleType(), True),
+                StructField("created_at", TimestampType(), True)
+            ])
+            return self.spark.createDataFrame([], schema)
     
-    def create_integrated_features(self) -> DataFrame:
+    def create_integrated_ml_features(self) -> DataFrame:
         """
-        Create integrated features combining sensor and weather data
-        - Cross-source correlations
-        - Environmental stress indicators
+        Create integrated ML features combining sensor and weather data
+        - Join sensor and weather features by date
+        - Create correlation features
         """
         logger.info("Creating integrated ML features for Gold zone...")
         
-        # Read Gold zone features
-        sensor_features = self.spark.read.format("delta") \
-            .load(f"{self.gold_path}sensor_ml_features/")
-        
-        weather_features = self.spark.read.format("delta") \
-            .load(f"{self.gold_path}weather_ml_features/")
-        
-        # Join sensor and weather data by date (assuming single location for now)
-        integrated_df = sensor_features.alias("s") \
-            .join(weather_features.alias("w"), 
-                  col("s.date") == col("w.date"), "left") \
-            .select(
-                col("s.*"),
-                # Weather features
-                col("w.avg_temperature").alias("weather_avg_temp"),
-                col("w.max_temperature").alias("weather_max_temp"),
-                col("w.min_temperature").alias("weather_min_temp"),
-                col("w.avg_humidity").alias("weather_avg_humidity"),
-                col("w.avg_wind_speed"),
-                col("w.avg_uv_index"),
-                col("w.dominant_weather_category"),
-                col("w.extreme_weather_score"),
-                col("w.avg_weather_severity")
-            ) \
-            .withColumn(
-                # Temperature differential analysis
-                "temp_differential",
-                when(col("weather_avg_temp").isNotNull(),
-                     abs(col("avg_temperature") - col("weather_avg_temp")))
-                .otherwise(null())
-            ) \
-            .withColumn(
-                "humidity_differential", 
-                when(col("weather_avg_humidity").isNotNull(),
-                     abs(col("avg_humidity") - col("weather_avg_humidity")))
-                .otherwise(null())
-            ) \
-            .withColumn(
-                # Environmental stress indicators
-                "heat_stress_indicator",
-                when((col("weather_max_temp") > 35) & (col("avg_humidity") > 70), "HIGH")
-                .when((col("weather_max_temp") > 30) & (col("avg_humidity") > 60), "MEDIUM")
-                .otherwise("LOW")
-            ) \
-            .withColumn(
-                "drought_stress_indicator",
-                when((col("weather_avg_humidity") < 40) & (col("avg_humidity") < 50), "HIGH")
-                .when((col("weather_avg_humidity") < 50) & (col("avg_humidity") < 60), "MEDIUM")
-                .otherwise("LOW")
-            ) \
-            .withColumn(
-                # Multi-source risk assessment
-                "environmental_risk_score",
-                (col("extreme_weather_score") + 
-                 when(col("risk_score") == "HIGH", 3)
-                 .when(col("risk_score") == "MEDIUM", 2)
-                 .when(col("risk_score") == "LOW", 1)
-                 .otherwise(0) +
-                 when(col("heat_stress_indicator") == "HIGH", 2)
-                 .when(col("heat_stress_indicator") == "MEDIUM", 1)
-                 .otherwise(0) +
-                 when(col("drought_stress_indicator") == "HIGH", 2)
-                 .when(col("drought_stress_indicator") == "MEDIUM", 1)
-                 .otherwise(0)) / 4.0
-            ) \
-            .withColumn(
-                "crop_health_prediction",
-                when(col("environmental_risk_score") > 2.5, "HIGH_RISK")
-                .when(col("environmental_risk_score") > 1.5, "MEDIUM_RISK")
-                .when(col("environmental_risk_score") > 0.5, "LOW_RISK")
-                .otherwise("HEALTHY")
-            ) \
-            .withColumn("integration_timestamp", current_timestamp())
-        
-        # Write to Gold zone as Delta table
-        integrated_df.write \
-            .format("delta") \
-            .mode("overwrite") \
-            .option("mergeSchema", "true") \
-            .save(f"{self.gold_path}integrated_ml_features/")
-        
-        logger.info(f"Created {integrated_df.count()} integrated ML feature records")
-        return integrated_df
+        try:
+            # Read ML features
+            sensor_features = self.spark.read.format("delta").load(f"{self.gold_path}ml_features/sensor/")
+            weather_features = self.spark.read.format("delta").load(f"{self.gold_path}ml_features/weather/")
+            
+            # Join sensor and weather data by date (assuming single location for now)
+            integrated_df = sensor_features.alias("s") \
+                .join(weather_features.alias("w"), 
+                      col("s.date") == col("w.date"), "left") \
+                .select(
+                    col("s.*"),
+                    # Weather features
+                    col("w.avg_temperature").alias("weather_avg_temperature"),
+                    col("w.avg_humidity").alias("weather_avg_humidity"),
+                    col("w.avg_wind_speed").alias("weather_avg_wind_speed"),
+                    col("w.avg_uv_index").alias("weather_avg_uv_index"),
+                    col("w.temperature_range").alias("weather_temp_range"),
+                    col("w.humidity_range").alias("weather_humidity_range"),
+                    col("w.dominant_condition"),
+                    col("w.temperature_stability"),
+                    col("w.wind_category")
+                ) \
+                .withColumn(
+                    # Correlation features
+                    "temp_differential", 
+                    abs(col("avg_temperature") - col("weather_avg_temperature"))
+                ) \
+                .withColumn(
+                    "humidity_differential",
+                    abs(col("avg_humidity") - col("weather_avg_humidity"))
+                ) \
+                .withColumn(
+                    # Environmental stress indicators
+                    "environmental_stress_score",
+                    when((col("temp_differential") > 10) | (col("humidity_differential") > 20), "HIGH")
+                    .when((col("temp_differential") > 5) | (col("humidity_differential") > 10), "MEDIUM")
+                    .otherwise("LOW")
+                ) \
+                .withColumn(
+                    # Combined risk assessment
+                    "combined_risk_score",
+                    when((col("risk_score") == "HIGH") | (col("environmental_stress_score") == "HIGH"), "HIGH")
+                    .when((col("risk_score") == "MEDIUM") | (col("environmental_stress_score") == "MEDIUM"), "MEDIUM")
+                    .otherwise("LOW")
+                )
+            
+            # Write to organized Gold zone path
+            integrated_df.write \
+                .format("delta") \
+                .mode("overwrite") \
+                .option("mergeSchema", "true") \
+                .save(f"{self.gold_path}ml_features/integrated/")
+            
+            logger.info(f"Created {integrated_df.count()} integrated ML feature records")
+            return integrated_df
+            
+        except Exception as e:
+            logger.warning(f"Integrated ML features creation failed: {e}")
+            # Return empty DataFrame with sensor features only
+            return self.spark.read.format("delta").load(f"{self.gold_path}ml_features/sensor/")
     
-    def run_all_gold_processing(self, batch_date: Optional[str] = None) -> Dict[str, Any]:
+    # =================== ORCHESTRATION METHODS ===================
+    
+    def run_all_sensor_processing(self) -> Dict[str, Any]:
         """
-        Run all Gold zone processing
+        Run all sensor metrics processing
         """
-        logger.info(f"Starting Gold zone processing for date: {batch_date or 'latest'}")
+        logger.info("Starting sensor metrics processing...")
         
         results = {}
         
         try:
-            # Create sensor ML features
-            sensor_ml_df = self.create_sensor_ml_features(batch_date)
-            results["sensor_ml_count"] = sensor_ml_df.count()
+            # Sensor dashboard metrics
+            recent_df = self.create_sensor_recent_metrics()
+            results["sensor_recent_count"] = recent_df.count()
             
-            # Create sensor dashboard KPIs
-            sensor_kpi_df = self.create_sensor_dashboard_kpis()
-            results["sensor_kpi_count"] = sensor_kpi_df.count()
+            hourly_df = self.create_sensor_hourly_aggregations()
+            results["sensor_hourly_count"] = hourly_df.count()
             
-            # Create weather ML features
-            weather_ml_df = self.create_weather_ml_features(batch_date)
-            results["weather_ml_count"] = weather_ml_df.count()
+            alert_df = self.create_sensor_alert_summary()
+            results["sensor_alerts_count"] = alert_df.count()
             
-            # Create integrated features
-            integrated_df = self.create_integrated_features()
-            results["integrated_count"] = integrated_df.count()
+            ranking_df = self.create_sensor_performance_ranking()
+            results["sensor_performance_count"] = ranking_df.count()
             
-            logger.info("Gold zone processing completed successfully")
+            overview_df = self.create_sensor_overview()
+            results["sensor_overview_count"] = overview_df.count()
+            
+            logger.info("Sensor metrics processing completed successfully")
             return results
             
         except Exception as e:
-            logger.error(f"Error in Gold zone processing: {e}")
+            logger.error(f"Error in sensor metrics processing: {e}")
             raise
     
-    def get_ml_feature_summary(self) -> Dict[str, Any]:
+    def run_all_weather_processing(self) -> Dict[str, Any]:
         """
-        Generate summary statistics for ML features
+        Run all weather metrics processing
         """
-        logger.info("Generating ML feature summary...")
+        logger.info("Starting weather metrics processing...")
+        
+        results = {}
+        
+        try:
+            # Weather dashboard metrics
+            monthly_df = self.create_weather_monthly_stats()
+            results["weather_monthly_count"] = monthly_df.count()
+            
+            logger.info("Weather metrics processing completed successfully")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error in weather metrics processing: {e}")
+            raise
+    
+    def run_all_ml_processing(self) -> Dict[str, Any]:
+        """
+        Run all ML features processing
+        """
+        logger.info("Starting ML features processing...")
+        
+        results = {}
+        
+        try:
+            # ML features
+            sensor_ml_df = self.create_sensor_ml_features()
+            results["sensor_ml_features_count"] = sensor_ml_df.count()
+            
+            weather_ml_df = self.create_weather_ml_features()
+            results["weather_ml_features_count"] = weather_ml_df.count()
+            
+            integrated_ml_df = self.create_integrated_ml_features()
+            results["integrated_ml_features_count"] = integrated_ml_df.count()
+            
+            logger.info("ML features processing completed successfully")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error in ML features processing: {e}")
+            raise
+    
+    def run_all_gold_processing(self, batch_date: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Run all Gold zone processing - sensors, weather, and ML features
+        """
+        logger.info("Starting complete Gold zone processing...")
+        
+        all_results = {}
+        
+        try:
+            # Sensor metrics
+            sensor_results = self.run_all_sensor_processing()
+            all_results.update(sensor_results)
+            
+            # Weather metrics
+            weather_results = self.run_all_weather_processing()
+            all_results.update(weather_results)
+            
+            # ML features
+            ml_results = self.run_all_ml_processing()
+            all_results.update(ml_results)
+            
+            all_results["processing_timestamp"] = datetime.now().isoformat()
+            
+            logger.info("Complete Gold zone processing completed successfully")
+            return all_results
+            
+        except Exception as e:
+            logger.error(f"Error in complete Gold zone processing: {e}")
+            raise
+    
+    def get_dashboard_summary(self) -> Dict[str, Any]:
+        """
+        Generate comprehensive dashboard summary
+        """
+        logger.info("Generating dashboard summary...")
         
         summary = {}
         
         try:
-            # Sensor ML features summary
-            sensor_ml_df = self.spark.read.format("delta") \
-                .load(f"{self.gold_path}sensor_ml_features/")
+            # Sensor metrics summary
+            try:
+                recent_df = self.spark.read.format("delta").load(f"{self.gold_path}sensor_metrics/recent/")
             
-            sensor_summary = sensor_ml_df.agg(
-                count("*").alias("total_records"),
-                countDistinct("field_id").alias("unique_fields"),
-                avg("anomaly_rate").alias("avg_anomaly_rate"),
-                sum(when(col("risk_score") == "HIGH", 1).otherwise(0)).alias("high_risk_days"),
-                sum(when(col("risk_score") == "MEDIUM", 1).otherwise(0)).alias("medium_risk_days"),
-                sum(when(col("risk_score") == "LOW", 1).otherwise(0)).alias("low_risk_days")
+                recent_summary = recent_df.agg(
+                count("*").alias("total_fields"),
+                sum(when(col("status") == "HEALTHY", 1).otherwise(0)).alias("healthy_fields"),
+                sum(when(col("status") == "MEDIUM_RISK", 1).otherwise(0)).alias("medium_risk_fields"),
+                sum(when(col("status") == "HIGH_RISK", 1).otherwise(0)).alias("high_risk_fields"),
+                    sum(when(col("status") == "DATA_ISSUE", 1).otherwise(0)).alias("data_issue_fields"),
+                sum(when(col("is_online"), 1).otherwise(0)).alias("online_fields"),
+                sum(col("anomaly_count_30min")).alias("total_anomalies"),
+                avg("current_temperature").alias("avg_temp"),
+                avg("current_humidity").alias("avg_humidity"),
+                avg("current_soil_ph").alias("avg_ph")
             ).collect()[0]
             
-            summary["sensor_ml"] = {
-                "total_records": int(sensor_summary.total_records or 0),
-                "unique_fields": int(sensor_summary.unique_fields or 0),
-                "avg_anomaly_rate": float(sensor_summary.avg_anomaly_rate or 0),
-                "high_risk_days": int(sensor_summary.high_risk_days or 0),
-                "medium_risk_days": int(sensor_summary.medium_risk_days or 0),
-                "low_risk_days": int(sensor_summary.low_risk_days or 0)
-            }
+                summary["sensors"] = {
+                    "total_fields": int(recent_summary.total_fields or 0),
+                    "healthy_fields": int(recent_summary.healthy_fields or 0),
+                    "medium_risk_fields": int(recent_summary.medium_risk_fields or 0),
+                    "high_risk_fields": int(recent_summary.high_risk_fields or 0),
+                    "data_issue_fields": int(recent_summary.data_issue_fields or 0),
+                    "online_fields": int(recent_summary.online_fields or 0),
+                    "total_anomalies": int(recent_summary.total_anomalies or 0),
+                    "avg_temperature": float(recent_summary.avg_temp or 0),
+                    "avg_humidity": float(recent_summary.avg_humidity or 0),
+                    "avg_soil_ph": float(recent_summary.avg_ph or 0)
+                }
+            except Exception as e:
+                logger.warning(f"Could not load sensor summary: {e}")
+                summary["sensors"] = {"error": "No sensor data available"}
             
-            # Integrated features summary
-            integrated_df = self.spark.read.format("delta") \
-                .load(f"{self.gold_path}integrated_ml_features/")
+            # Performance summary
+            try:
+                ranking_df = self.spark.read.format("delta").load(f"{self.gold_path}sensor_metrics/performance/")
+                
+                ranking_summary = ranking_df.agg(
+                    avg("overall_performance_score").alias("avg_performance"),
+                    sum(when(col("performance_grade") == "A", 1).otherwise(0)).alias("grade_a_count"),
+                    sum(when(col("performance_grade") == "B", 1).otherwise(0)).alias("grade_b_count"),
+                    sum(when(col("performance_grade") == "C", 1).otherwise(0)).alias("grade_c_count"),
+                    sum(when(col("performance_grade") == "D", 1).otherwise(0)).alias("grade_d_count"),
+                    sum(when(col("performance_grade") == "F", 1).otherwise(0)).alias("grade_f_count")
+                ).collect()[0]
             
-            integrated_summary = integrated_df.agg(
-                count("*").alias("total_records"),
-                avg("environmental_risk_score").alias("avg_env_risk"),
-                sum(when(col("crop_health_prediction") == "HIGH_RISK", 1).otherwise(0)).alias("high_risk_predictions"),
-                sum(when(col("crop_health_prediction") == "MEDIUM_RISK", 1).otherwise(0)).alias("medium_risk_predictions"),
-                sum(when(col("crop_health_prediction") == "HEALTHY", 1).otherwise(0)).alias("healthy_predictions")
-            ).collect()[0]
+                summary["performance"] = {
+                    "avg_performance_score": float(ranking_summary.avg_performance or 0),
+                    "grade_a_count": int(ranking_summary.grade_a_count or 0),
+                    "grade_b_count": int(ranking_summary.grade_b_count or 0),
+                    "grade_c_count": int(ranking_summary.grade_c_count or 0),
+                    "grade_d_count": int(ranking_summary.grade_d_count or 0),
+                    "grade_f_count": int(ranking_summary.grade_f_count or 0)
+                }
+            except Exception as e:
+                logger.warning(f"Could not load performance summary: {e}")
+                summary["performance"] = {"error": "No performance data available"}
             
-            summary["integrated"] = {
-                "total_records": int(integrated_summary.total_records or 0),
-                "avg_environmental_risk": float(integrated_summary.avg_env_risk or 0),
-                "high_risk_predictions": int(integrated_summary.high_risk_predictions or 0),
-                "medium_risk_predictions": int(integrated_summary.medium_risk_predictions or 0),
-                "healthy_predictions": int(integrated_summary.healthy_predictions or 0)
-            }
+
             
-            logger.info("ML feature summary generated successfully")
+            # ML features summary
+            try:
+                ml_sensor_df = self.spark.read.format("delta").load(f"{self.gold_path}ml_features/sensor/")
+                ml_integrated_df = self.spark.read.format("delta").load(f"{self.gold_path}ml_features/integrated/")
+                
+                ml_summary = ml_integrated_df.agg(
+                    count("*").alias("total_ml_records"),
+                    sum(when(col("combined_risk_score") == "HIGH", 1).otherwise(0)).alias("high_risk_ml"),
+                    sum(when(col("combined_risk_score") == "MEDIUM", 1).otherwise(0)).alias("medium_risk_ml"),
+                    sum(when(col("combined_risk_score") == "LOW", 1).otherwise(0)).alias("low_risk_ml"),
+                    avg("data_quality_score").alias("avg_data_quality")
+                ).collect()[0]
+                
+                summary["ml_features"] = {
+                    "total_records": int(ml_summary.total_ml_records or 0),
+                    "high_risk_records": int(ml_summary.high_risk_ml or 0),
+                    "medium_risk_records": int(ml_summary.medium_risk_ml or 0),
+                    "low_risk_records": int(ml_summary.low_risk_ml or 0),
+                    "avg_data_quality_score": float(ml_summary.avg_data_quality or 0)
+                }
+            except Exception as e:
+                logger.warning(f"Could not load ML features summary: {e}")
+                summary["ml_features"] = {"error": "No ML features data available"}
+            
+            summary["generated_at"] = datetime.now().isoformat()
+            
+            logger.info("Dashboard summary generated successfully")
             return summary
             
         except Exception as e:
-            logger.error(f"Error generating ML feature summary: {e}")
+            logger.error(f"Error generating dashboard summary: {e}")
             return {"error": str(e)} 

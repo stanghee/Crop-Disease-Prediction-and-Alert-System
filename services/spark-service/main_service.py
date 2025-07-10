@@ -103,49 +103,76 @@ class MainDataLakeService:
             self.bronze_processor.stop_all_streams(self.streaming_queries)
             self.streaming_queries = []
     
-    def run_batch_processing(self, batch_date: Optional[str] = None):
-        """Run Silver and Gold zone batch processing"""
-        logger.info(f"Starting batch processing for date: {batch_date or 'latest'}")
+    def start_silver_streaming(self):
+        """
+        Start all Silver zone streaming queries (sensors, weather, satellite).
+        Returns a list of streaming query handles.
+        """
+        logger.info("Starting Silver zone streaming processing...")
+        queries = []
+        try:
+            # Start sensor streaming (returns tuple: silver_query, kafka_query)
+            sensor_queries = self.silver_processor.start_sensor_stream()
+            if sensor_queries:
+                silver_query, kafka_query = sensor_queries
+                queries.extend([silver_query, kafka_query])
+                logger.info("Sensor Silver streaming started (Parquet + Kafka)")
+            else:
+                logger.warning("Sensor Silver streaming failed to start")
+            
+            # Start weather streaming (returns tuple: silver_query, kafka_query)
+            weather_queries = self.silver_processor.start_weather_stream()
+            if weather_queries:
+                silver_query, kafka_query = weather_queries
+                queries.extend([silver_query, kafka_query])
+                logger.info("Weather Silver streaming started (Parquet + Kafka)")
+            else:
+                logger.warning("Weather Silver streaming failed to start")
+            
+            # Start satellite streaming (returns single query)
+            satellite_query = self.silver_processor.start_satellite_stream()
+            if satellite_query:
+                queries.append(satellite_query)
+                logger.info("Satellite Silver streaming started")
+            else:
+                logger.warning("Satellite Silver streaming failed to start")
+            
+            logger.info(f"Started {len(queries)} Silver streaming queries out of 5 attempted")
+        except Exception as e:
+            logger.error(f"Error starting Silver streaming: {e}")
+            # Stop any started queries
+            for q in queries:
+                if q and q.isActive:
+                    q.stop()
+            raise
+        return queries
+    
+    def run_gold_processing(self) -> Dict[str, Any]:
+        """
+        Run Gold zone processing - dashboard metrics and ML features
+        """
+        logger.info("Starting Gold zone processing...")
         
         try:
-            # Silver zone processing
-            logger.info("Processing Silver zone...")
-            silver_results = self.silver_processor.run_all_silver_processing(batch_date)
-            logger.info(f"Silver processing completed: {silver_results}")
+            # Run comprehensive Gold processing
+            results = self.gold_processor.run_all_gold_processing()
             
-            # Gold zone processing
-            logger.info("Processing Gold zone...")
-            gold_results = self.gold_processor.run_all_gold_processing(batch_date)
-            logger.info(f"Gold processing completed: {gold_results}")
-            
-            return {
-                "batch_date": batch_date or datetime.now().strftime("%Y-%m-%d"),
-                "silver_results": silver_results,
-                "gold_results": gold_results,
-                "processing_time": datetime.now().isoformat()
-            }
+            logger.info(f"Gold processing completed: {results}")
+            return results
             
         except Exception as e:
-            logger.error(f"Error in batch processing: {e}")
-            raise
+            logger.error(f"Error in Gold processing: {e}")
+            return {"error": str(e), "timestamp": datetime.now().isoformat()}
     
-    def run_continuous_batch_processing(self, interval_minutes: int = 5):
-        """Run batch processing continuously at specified intervals"""
-        logger.info(f"Starting continuous batch processing every {interval_minutes} minutes")
-        
-        while self.is_running:
-            try:
-                # Run batch processing
-                results = self.run_batch_processing()
-                logger.info(f"Batch processing completed: {results}")
-                
-                # Wait for next interval
-                time.sleep(interval_minutes * 60)
-                
-            except Exception as e:
-                logger.error(f"Error in continuous batch processing: {e}")
-                # Wait before retrying
-                time.sleep(60)
+    def get_dashboard_summary(self) -> Dict[str, Any]:
+        """
+        Get dashboard summary with all metrics
+        """
+        try:
+            return self.gold_processor.get_dashboard_summary()
+        except Exception as e:
+            logger.error(f"Error getting dashboard summary: {e}")
+            return {"error": str(e)}
     
     def get_system_status(self) -> Dict[str, Any]:
         """Get overall system status"""
@@ -161,13 +188,15 @@ class MainDataLakeService:
             "spark_app_name": self.spark.sparkContext.appName
         }
         
+        # Gold processor status
         try:
-            # Get ML feature summary
-            ml_summary = self.gold_processor.get_ml_feature_summary()
-            status["ml_features"] = ml_summary
-            
+            status["gold_processor"] = "available"
+            # Add last processing info if available
+            dashboard_summary = self.get_dashboard_summary()
+            if "error" not in dashboard_summary:
+                status["gold_last_processed"] = dashboard_summary.get("generated_at", "unknown")
         except Exception as e:
-            logger.error(f"Error getting system status: {e}")
+            logger.error(f"Error getting Gold processor status: {e}")
             status["error"] = str(e)
         
         return status
@@ -184,82 +213,154 @@ class MainDataLakeService:
         
         logger.info("Data Lake Service shutdown completed")
 
-def run_streaming_worker(service: MainDataLakeService):
-    """Worker function for streaming processing"""
+# Separate Bronze and Silver streaming workers
+def run_bronze_streaming_worker(service: MainDataLakeService):
+    """
+    Worker for Bronze streaming only. Keeps Bronze zone ingestion alive independently.
+    """
     try:
         service.start_streaming_processing()
-        
-        # Keep streaming alive
         while service.is_running:
-            # Check actual Spark streams, not just our list
-            actual_active_streams = len(service.spark.streams.active)
-            tracked_active_queries = len([q for q in service.streaming_queries if q and q.isActive])
-            
-            logger.info(f"Stream check - Tracked: {tracked_active_queries}, Actual Spark: {actual_active_streams}")
-            
-            if actual_active_streams == 0:
-                logger.warning("No active Spark streaming queries detected, restarting...")
-                try:
-                    service.stop_streaming_processing()
-                    time.sleep(5)  # Wait a bit before restarting
-                    service.start_streaming_processing()
-                except Exception as e:
-                    logger.error(f"Error restarting streams: {e}")
-            
-            time.sleep(30)  # Check every 30 seconds
-            
+            bronze_active = len([q for q in service.streaming_queries if q and q.isActive])
+            logger.info(f"Bronze streaming check - Active queries: {bronze_active}")
+            if bronze_active == 0:
+                logger.warning("No active Bronze streaming queries! Exiting Bronze worker...")
+                break
+            time.sleep(30)
     except Exception as e:
-        logger.error(f"Error in streaming worker: {e}")
-        service.stop_streaming_processing()
+        logger.error(f"Error in Bronze streaming worker: {e}")
 
-def run_batch_worker(service: MainDataLakeService):
-    """Worker function for batch processing"""
-    try:
-        service.run_continuous_batch_processing(interval_minutes=5)
-    except Exception as e:
-        logger.error(f"Error in batch worker: {e}")
+def run_silver_streaming_worker(service: MainDataLakeService):
+    """
+    Worker for Silver streaming only. Keeps Silver zone processing alive independently.
+    """
+    max_retries = 3
+    retry_count = 0
+    
+    while service.is_running and retry_count < max_retries:
+        try:
+            logger.info(f"Attempting to start Silver streaming (attempt {retry_count + 1}/{max_retries})")
+            silver_queries = service.start_silver_streaming()
+            
+            if not silver_queries:
+                logger.warning("No Silver streaming queries started, will retry")
+                retry_count += 1
+                time.sleep(60)  # Wait 1 minute before retry
+                continue
+            
+            # Track only Silver queries
+            while service.is_running:
+                silver_active = len([q for q in silver_queries if q and q.isActive])
+                logger.info(f"Silver streaming check - Active queries: {silver_active}")
+                if silver_active == 0:
+                    logger.warning("No active Silver streaming queries! Will retry...")
+                    break
+                time.sleep(30)
+            
+            retry_count += 1
+            if retry_count < max_retries:
+                logger.info(f"Silver streaming stopped, retrying in 60 seconds... (attempt {retry_count + 1}/{max_retries})")
+                time.sleep(60)
+            
+        except Exception as e:
+            logger.error(f"Error in Silver streaming worker: {e}")
+            retry_count += 1
+            if retry_count < max_retries:
+                logger.info(f"Will retry Silver streaming in 60 seconds... (attempt {retry_count + 1}/{max_retries})")
+                time.sleep(60)
+    
+    if retry_count >= max_retries:
+        logger.error(f"Silver streaming failed after {max_retries} attempts, giving up")
+    else:
+        logger.info("Silver streaming worker stopped")
+
+def run_gold_processing_worker(service: MainDataLakeService):
+    """
+    Worker for Gold zone processing. Runs periodically to process dashboard metrics and ML features.
+    """
+    logger.info("Starting Gold zone processing worker...")
+    
+    # Wait for initial data to be available (2 minutes after startup)
+    logger.info("Waiting for initial data to be available...")
+    time.sleep(120)
+    
+    # Gold processing interval - every 10 minutes
+    gold_processing_interval = 600
+    last_processing_time = 0
+    
+    while service.is_running:
+        try:
+            current_time = time.time()
+            
+            # Check if it's time to run Gold processing
+            if current_time - last_processing_time >= gold_processing_interval:
+                logger.info("Starting Gold zone processing cycle...")
+                
+                # Run Gold processing
+                results = service.run_gold_processing()
+                
+                if "error" not in results:
+                    logger.info(f"Gold processing completed successfully: {results}")
+                    last_processing_time = current_time
+                else:
+                    logger.error(f"Gold processing failed: {results}")
+                    # Still update time to prevent rapid retries
+                    last_processing_time = current_time
+            
+            # Sleep for 1 minute before next check
+            time.sleep(60)
+            
+        except Exception as e:
+            logger.error(f"Error in Gold processing worker: {e}")
+            time.sleep(60)
+    
+    logger.info("Gold processing worker stopped")
 
 def main():
     """Main entry point"""
     logger.info("Starting Crop Disease Data Lake Service...")
-    
     service = MainDataLakeService()
-    
     try:
-        # Start streaming processing in background thread
-        streaming_thread = threading.Thread(
-            target=run_streaming_worker, 
+        # Start Bronze streaming in its own thread
+        bronze_thread = threading.Thread(
+            target=run_bronze_streaming_worker,
             args=(service,),
             daemon=True
         )
-        streaming_thread.start()
-        
-        # Start batch processing in background thread
-        batch_thread = threading.Thread(
-            target=run_batch_worker,
+        bronze_thread.start()
+
+        # Start Silver streaming in its own thread
+        silver_thread = threading.Thread(
+            target=run_silver_streaming_worker,
             args=(service,),
             daemon=True
         )
-        batch_thread.start()
-        
+        silver_thread.start()
+
+        # Start Gold processing in its own thread
+        gold_thread = threading.Thread(
+            target=run_gold_processing_worker,
+            args=(service,),
+            daemon=True
+        )
+        gold_thread.start()
+
+        logger.info("All workers started: Bronze streaming, Silver streaming, Gold processing")
+
         # Main monitoring loop
         while True:
             try:
                 status = service.get_system_status()
                 logger.info(f"System status: {status}")
-                
                 time.sleep(300)  # Status check every 5 minutes
-                
             except KeyboardInterrupt:
                 logger.info("Received shutdown signal")
                 break
             except Exception as e:
                 logger.error(f"Error in main loop: {e}")
                 time.sleep(60)
-    
     except Exception as e:
         logger.error(f"Fatal error in main: {e}")
-    
     finally:
         service.shutdown()
 

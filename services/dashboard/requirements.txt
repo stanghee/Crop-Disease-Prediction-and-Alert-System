@@ -1,0 +1,26 @@
+# Streamlit Dashboard Dependencies
+streamlit==1.28.0
+plotly==5.17.0
+pandas==2.0.3
+requests==2.31.0
+
+# Additional visualization libraries
+altair==5.1.2
+matplotlib==3.8.0
+seaborn==0.13.0
+
+# Date/time handling
+python-dateutil==2.8.2
+pytz==2023.3
+
+# API and data processing
+httpx==0.25.0
+pydantic==2.5.0
+
+# Kafka integration
+kafka-python==2.0.2
+
+# Utilities
+python-dotenv==1.0.0
+pillow==10.0.1
+streamlit-autorefresh==1.0.1 
