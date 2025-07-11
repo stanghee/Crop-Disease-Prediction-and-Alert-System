@@ -315,6 +315,21 @@ class GoldZoneProcessor:
             # Rimuovi la cartella temporanea
             fs.delete(tmp_path, True)
 
+            # NEW: Also publish to Kafka for real-time ML processing
+            logger.info("Publishing ML features to Kafka topic 'gold-ml-features'")
+            try:
+                # Convert to JSON and write to Kafka
+                final_ml_features.selectExpr("to_json(struct(*)) AS value") \
+                    .write \
+                    .format("kafka") \
+                    .option("kafka.bootstrap.servers", "kafka:9092") \
+                    .option("topic", "gold-ml-features") \
+                    .save()
+                logger.info("Successfully published ML features to Kafka")
+            except Exception as kafka_error:
+                logger.error(f"Failed to publish to Kafka: {kafka_error}")
+                # Don't fail the entire process if Kafka write fails
+
             # Log
             record_count = final_ml_features.count()
             logger.info(f"Created ML feature file: {final_path}")

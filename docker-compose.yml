@@ -253,6 +253,55 @@ services:
     mem_limit: 512m
     mem_reservation: 256m
 
+  ml-anomaly-service:
+    build: ./services/ml-anomaly-service
+    volumes:
+      - ./services/ml-anomaly-service:/app
+      - ml_models:/app/models
+      - ml_checkpoints:/tmp/ml-checkpoints
+    working_dir: /app
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      spark-data-lake-service:
+        condition: service_started
+    environment:
+      # ML Service Configuration
+      ML_SERVICE_HOST: 0.0.0.0
+      ML_SERVICE_PORT: 8002
+      
+      # PostgreSQL Configuration
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: crop_disease_ml
+      POSTGRES_USER: ml_user
+      POSTGRES_PASSWORD: ml_password
+      
+      # MinIO Configuration
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      
+      # Kafka Configuration
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      
+      # Spark Configuration
+      SPARK_DRIVER_MEMORY: 2g
+      SPARK_EXECUTOR_MEMORY: 2g
+      
+      # Timezone
+      TIMEZONE: Europe/Rome
+      
+    ports:
+      - "8002:8002"  # ML Service API
+      - "4041:4040"  # Spark UI (different port to avoid conflict)
+    restart: unless-stopped
+    mem_limit: 3g
+    mem_reservation: 2g
 
 volumes:
   minio_data:
@@ -260,3 +309,4 @@ volumes:
   postgres_data:
   ml_models:
   ml_logs:
+  ml_checkpoints:
