@@ -38,6 +38,7 @@ class SilverZoneProcessor:
             StructField("kafka_partition", LongType(), True),
             StructField("kafka_timestamp", StringType(), True),
             StructField("kafka_topic", StringType(), True),
+            StructField("location", StringType(), True),
             StructField("soil_ph", DoubleType(), True),
             StructField("temperature", DoubleType(), True),
             StructField("timestamp", StringType(), True),
@@ -130,6 +131,7 @@ class SilverZoneProcessor:
                     col("humidity").isNotNull() &
                     col("soil_ph").isNotNull() &
                     col("field_id").isNotNull() &
+                    col("location").isNotNull() &
                     col("timestamp").isNotNull()
                 ) \
                 .withColumn("timestamp_parsed", to_timestamp(col("timestamp"), "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX")) \
@@ -159,6 +161,7 @@ class SilverZoneProcessor:
             kafka_stream = silver_stream.select(
                 to_json(struct(
                     col("field_id"),
+                    col("location"),
                     col("temperature"),
                     col("humidity"),
                     col("soil_ph"),

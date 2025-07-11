@@ -150,9 +150,9 @@ services:
 
 
   spark-data-lake-service:
-    build: ./services/spark-service
+    build: ./services/storage-service
     volumes:
-      - ./services/spark-service:/app
+      - ./services/storage-service:/app
       - spark_checkpoints:/app/spark-checkpoints
     working_dir: /app
     depends_on:

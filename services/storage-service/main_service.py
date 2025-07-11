@@ -149,15 +149,15 @@ class MainDataLakeService:
     
     def run_gold_processing(self) -> Dict[str, Any]:
         """
-        Run Gold zone processing - dashboard metrics and ML features
+        Run Gold zone processing - ML features with sliding window
         """
-        logger.info("Starting Gold zone processing...")
+        logger.info("Starting Gold zone ML features processing...")
         
         try:
-            # Run comprehensive Gold processing
-            results = self.gold_processor.run_all_gold_processing()
+            # Run ML features processing with sliding window
+            results = self.gold_processor.run_ml_features_processing()
             
-            logger.info(f"Gold processing completed: {results}")
+            logger.info(f"ML features processing completed: {results}")
             return results
             
         except Exception as e:
@@ -276,7 +276,7 @@ def run_silver_streaming_worker(service: MainDataLakeService):
 
 def run_gold_processing_worker(service: MainDataLakeService):
     """
-    Worker for Gold zone processing. Runs periodically to process dashboard metrics and ML features.
+    Worker for Gold zone processing. Runs periodically to process ML features with sliding window.
     """
     logger.info("Starting Gold zone processing worker...")
     

@@ -406,7 +406,7 @@ class KafkaAlertConsumer:
             # current_time is already timezone-aware (Europe/Rome)
             
             time_diff = (current_time - violation_time).total_seconds()
-            if time_diff > 60:  # 1 minute
+            if time_diff > 300:  # 5 minutes
                 logger.info(f"Skipping old violation: {condition.alert_type} from {condition.timestamp}")
                 return False
                 
