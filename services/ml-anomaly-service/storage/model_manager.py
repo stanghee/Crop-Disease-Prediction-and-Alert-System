@@ -23,7 +23,7 @@ class ModelManager:
             secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
             secure=False
         )
-        self.bucket = "ml"
+        self.bucket = "ml-models" 
         self.ensure_bucket()
         
     def ensure_bucket(self):

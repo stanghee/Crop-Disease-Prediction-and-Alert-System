@@ -8,9 +8,11 @@ import logging
 import json
 from datetime import datetime
 import numpy as np
+import pandas as pd
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
+from pyspark.sql.functions import pandas_udf
 import pickle
 
 from utils.feature_config import CORE_FEATURES, ANOMALY_THRESHOLD, CRITICAL_THRESHOLD
@@ -27,18 +29,18 @@ class StreamingPredictor:
         self.model_manager = ModelManager()
         self.postgres_client = PostgresClient()
         
-        # Load model on initialization
+        # Load model metadata on initialization
         self.model, self.scaler, self.metadata = self.model_manager.load_latest_model()
         if not self.model:
-            raise ValueError("No model available for inference")
-        
-        # Broadcast model to all nodes
-        self.broadcast_model = spark.sparkContext.broadcast(self.model)
-        self.broadcast_scaler = spark.sparkContext.broadcast(self.scaler)
+            logger.warning("No model available for inference - will load when needed")
+            self.metadata = {'model_version': 'no_model'}
         
     def start_streaming(self):
         """Start the streaming inference pipeline"""
         logger.info("Starting streaming inference pipeline")
+        
+        # Reload model if needed (in case it was updated)
+        self._reload_model_if_needed()
         
         # Define schema for gold-ml-features
         gold_schema = self._get_gold_schema()
@@ -74,55 +76,131 @@ class StreamingPredictor:
         return [query1, query2]
     
     def _detect_anomalies(self, df):
-        """Apply anomaly detection to streaming data"""
+        """Apply anomaly detection to streaming data using Pandas UDF"""
         
-        # UDF for anomaly detection
-        @udf(returnType=StructType([
+        # Pandas UDF for anomaly detection - uses global model variables
+        @pandas_udf(returnType=StructType([
             StructField("anomaly_score", FloatType()),
             StructField("is_anomaly", BooleanType()),
-            StructField("severity", StringType())
+            StructField("severity", StringType()),
+            StructField("recommendations", StringType())
         ]))
-        def predict_anomaly(features_array):
+        def predict_anomaly_batch(features_series):
             try:
-                # Get broadcasted model and scaler
-                model = self.broadcast_model.value
-                scaler = self.broadcast_scaler.value
+                # Import required modules inside UDF
+                import numpy as np
+                import pandas as pd
+                from utils.feature_config import ANOMALY_THRESHOLD, CRITICAL_THRESHOLD
                 
-                # Reshape and scale features
-                X = np.array(features_array).reshape(1, -1)
+                # Define inline recommendation function
+                def generate_inline_recommendations(anomaly_score, temp, humidity, soil_ph, temp_diff, humidity_diff, anomaly_rate):
+                    recommendations = []
+                    
+                    # Base recommendations based on anomaly score
+                    if anomaly_score > 0.9:
+                        recommendations.append("IMMEDIATE INTERVENTION REQUIRED")
+                    elif anomaly_score > 0.7:
+                        recommendations.append("WARNING: Critical conditions detected")
+                    elif anomaly_score > 0.5:
+                        recommendations.append("Enhanced monitoring recommended")
+                    else:
+                        recommendations.append("Normal conditions - continue monitoring")
+                    
+                    # Simple temperature-based recommendations
+                    if temp > 30:
+                        recommendations.append("High temperature: consider irrigation and shading")
+                    elif temp < 10:
+                        recommendations.append("Low temperature: protect crops from frost")
+                    
+                    # Simple humidity-based recommendations
+                    if humidity > 85:
+                        recommendations.append("High humidity: fungal risk - improve ventilation")
+                    elif humidity < 40:
+                        recommendations.append("Low humidity: increase irrigation")
+                    
+                    # Simple soil pH recommendations
+                    if soil_ph < 6.0:
+                        recommendations.append("Acidic pH: consider liming")
+                    elif soil_ph > 7.5:
+                        recommendations.append("Alkaline pH: consider organic acidifiers")
+                    
+                    # Join recommendations
+                    if len(recommendations) > 1:
+                        return " | ".join(recommendations)
+                    else:
+                        return recommendations[0] if recommendations else "No specific recommendations"
+                
+                # Load model and scaler inside UDF (this will be cached per worker)
+                from storage.model_manager import ModelManager
+                model_manager = ModelManager()
+                model, scaler, metadata = model_manager.load_latest_model()
+                
+                if model is None or scaler is None:
+                    # Return default values if no model available
+                    return pd.DataFrame({
+                        'anomaly_score': [0.0] * len(features_series),
+                        'is_anomaly': [False] * len(features_series),
+                        'severity': ['NO_MODEL'] * len(features_series),
+                        'recommendations': ['Model not available - check training status'] * len(features_series)
+                    })
+                
+                # Convert features to numpy array
+                features_list = features_series.tolist()
+                X = np.array(features_list)
+                
+                # Scale features
                 X_scaled = scaler.transform(X)
                 
-                # Get anomaly score (lower is more anomalous)
-                score = model.score_samples(X_scaled)[0]
-                # Convert to anomaly probability (lower score = higher anomaly probability)
-                # Isolation Forest returns negative scores for anomalies
-                normalized_score = -score  # Invert so positive = more anomalous
+                # Get anomaly scores
+                scores = model.score_samples(X_scaled)
                 
-                # Normalize to 0-1 range
-                # Typical scores range from -0.5 to 0.5, so we'll use a sigmoid-like transformation
-                normalized_score = 1 / (1 + np.exp(-normalized_score * 5))
+                # Convert scores to anomaly probabilities
+                normalized_scores = -scores  # Invert so positive = more anomalous
+                normalized_scores = 1 / (1 + np.exp(-normalized_scores * 5))
                 
-                # Determine if anomaly
-                is_anomaly = normalized_score > ANOMALY_THRESHOLD
+                # Determine anomalies and severity
+                is_anomalies = normalized_scores > ANOMALY_THRESHOLD
+                severities = []
+                recommendations = []
                 
-                # Determine severity
-                if normalized_score > CRITICAL_THRESHOLD:
-                    severity = "CRITICAL"
-                elif normalized_score > ANOMALY_THRESHOLD:
-                    severity = "HIGH"
-                else:
-                    severity = "NORMAL"
+                for i, score in enumerate(normalized_scores):
+                    # Get features for this record
+                    features = features_list[i]
+                    temp, humidity, soil_ph, temp_diff, humidity_diff, anomaly_rate = features
+                    
+                    # Determine severity
+                    if score > CRITICAL_THRESHOLD:
+                        severities.append("CRITICAL")
+                    elif score > ANOMALY_THRESHOLD:
+                        severities.append("HIGH")
+                    else:
+                        severities.append("NORMAL")
+                    
+                    # Generate simple recommendations inline
+                    rec = generate_inline_recommendations(score, temp, humidity, soil_ph, temp_diff, humidity_diff, anomaly_rate)
+                    recommendations.append(rec)
                 
-                return (float(normalized_score), bool(is_anomaly), severity)
+                return pd.DataFrame({
+                    'anomaly_score': normalized_scores.astype(float),
+                    'is_anomaly': is_anomalies.astype(bool),
+                    'severity': severities,
+                    'recommendations': recommendations
+                })
                 
             except Exception as e:
-                logger.error(f"Prediction error: {e}")
-                return (0.0, False, "ERROR")
+                logger.error(f"Batch prediction error: {e}")
+                # Return error values for the entire batch
+                return pd.DataFrame({
+                    'anomaly_score': [0.0] * len(features_series),
+                    'is_anomaly': [False] * len(features_series),
+                    'severity': ['ERROR'] * len(features_series),
+                    'recommendations': ['Processing error - contact technical support'] * len(features_series)
+                })
         
-        # Create feature array and apply UDF
+        # Create feature array and apply Pandas UDF
         return df \
             .withColumn("feature_array", array([col(f) for f in CORE_FEATURES])) \
-            .withColumn("prediction", predict_anomaly(col("feature_array"))) \
+            .withColumn("prediction", predict_anomaly_batch(col("feature_array"))) \
             .select(
                 col("field_id"),
                 col("location"),
@@ -130,6 +208,7 @@ class StreamingPredictor:
                 col("prediction.anomaly_score"),
                 col("prediction.is_anomaly"),
                 col("prediction.severity"),
+                col("prediction.recommendations"),
                 col("sensor_avg_temperature"),
                 col("sensor_avg_humidity"),
                 col("sensor_avg_soil_ph"),
@@ -153,6 +232,7 @@ class StreamingPredictor:
                     col("anomaly_score"),
                     col("is_anomaly"),
                     col("severity"),
+                    col("recommendations"),
                     col("model_version"),
                     col("prediction_timestamp"),
                     struct(
@@ -196,6 +276,64 @@ class StreamingPredictor:
         
         return query
     
+    #TODO: remove this function if not needed
+    def _generate_recommendations(self, anomaly_score, temp, humidity, soil_ph, temp_diff, humidity_diff, anomaly_rate):
+        """Generate text recommendations based on anomaly score and features"""
+        
+        recommendations = []
+        
+        # Base recommendations based on anomaly score
+        if anomaly_score > 0.9:
+            recommendations.append("🚨 IMMEDIATE INTERVENTION REQUIRED")
+        elif anomaly_score > 0.7:
+            recommendations.append("⚠️ WARNING: Critical conditions detected")
+        elif anomaly_score > 0.5:
+            recommendations.append("📊 Enhanced monitoring recommended")
+        else:
+            recommendations.append("✅ Normal conditions - continue monitoring")
+        
+        # Temperature-based recommendations
+        if temp > 30:
+            recommendations.append("🌡️ High temperature: consider supplemental irrigation and shading")
+        elif temp < 10:
+            recommendations.append("❄️ Low temperature: protect crops from frost")
+        
+        # Humidity-based recommendations
+        if humidity > 85:
+            recommendations.append("💧 High humidity: fungal risk - improve ventilation and consider preventive fungicides")
+        elif humidity < 40:
+            recommendations.append("🏜️ Low humidity: increase irrigation and consider misting")
+        
+        # Soil pH recommendations
+        if soil_ph < 6.0:
+            recommendations.append("🌱 Acidic pH: consider liming to increase pH")
+        elif soil_ph > 7.5:
+            recommendations.append("🌱 Alkaline pH: consider organic acidifiers")
+        
+        # Differential-based recommendations
+        if abs(temp_diff) > 5:
+            recommendations.append("🌡️ High temperature differential: verify local microclimate and sensors")
+        
+        if abs(humidity_diff) > 15:
+            recommendations.append("💧 High humidity differential: verify irrigation and drainage")
+        
+        # Anomaly rate recommendations
+        if anomaly_rate > 0.3:
+            recommendations.append("🔧 High anomaly rate: verify sensor operation and calibration")
+        
+        # Critical combinations
+        if temp > 25 and humidity > 80:
+            recommendations.append("🦠 Ideal conditions for pathogens: apply preventive fungicides")
+        
+        if soil_ph < 6.0 and humidity > 70:
+            recommendations.append("🌱 Nutritional stress + humidity: consider fertilizers and drainage")
+        
+        # Join recommendations
+        if len(recommendations) > 1:
+            return " | ".join(recommendations)
+        else:
+            return recommendations[0] if recommendations else "No specific recommendations"
+    
     def _get_gold_schema(self):
         """Get schema for gold-ml-features"""
         return StructType([
@@ -217,3 +355,24 @@ class StreamingPredictor:
             StructField("processing_timestamp", TimestampType()),
             # Add other fields as needed
         ])
+    
+    def _reload_model_if_needed(self):
+        """Reload model if a newer version is available"""
+        try:
+            # Check if there's a newer model available
+            new_model, new_scaler, new_metadata = self.model_manager.load_latest_model()
+            
+            if new_model is not None and new_metadata.get('model_version') != self.metadata.get('model_version'):
+                logger.info(f"Reloading model from {self.metadata.get('model_version')} to {new_metadata.get('model_version')}")
+                self.model = new_model
+                self.scaler = new_scaler
+                self.metadata = new_metadata
+                logger.info("Model reloaded successfully")
+            else:
+                logger.debug("No newer model available, using current model")
+                
+        except Exception as e:
+            logger.warning(f"Failed to reload model: {e}")
+            # Continue with current model
+    
+

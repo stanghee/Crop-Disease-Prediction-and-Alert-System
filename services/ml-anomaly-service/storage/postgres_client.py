@@ -40,6 +40,7 @@ class PostgresClient:
             anomaly_score FLOAT NOT NULL,
             is_anomaly BOOLEAN NOT NULL,
             severity VARCHAR(20),
+            recommendations TEXT,
             model_version VARCHAR(50),
             features JSONB,
             processing_time_ms INT,
@@ -82,10 +83,10 @@ class PostgresClient:
         insert_query = """
         INSERT INTO ml_predictions (
             timestamp, field_id, location, anomaly_score, 
-            is_anomaly, severity, model_version, features
+            is_anomaly, severity, recommendations, model_version, features
         ) VALUES (
             %(timestamp)s, %(field_id)s, %(location)s, %(anomaly_score)s,
-            %(is_anomaly)s, %(severity)s, %(model_version)s, %(features)s
+            %(is_anomaly)s, %(severity)s, %(recommendations)s, %(model_version)s, %(features)s
         )
         """
         
@@ -100,6 +101,7 @@ class PostgresClient:
                     'anomaly_score': float(row.anomaly_score),
                     'is_anomaly': bool(row.is_anomaly),
                     'severity': row.severity,
+                    'recommendations': row.recommendations if hasattr(row, 'recommendations') else None,
                     'model_version': row.model_version,
                     'features': json.dumps({
                         'temperature': float(row.sensor_avg_temperature) if row.sensor_avg_temperature else None,

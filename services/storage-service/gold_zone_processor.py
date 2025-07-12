@@ -287,36 +287,9 @@ class GoldZoneProcessor:
                     col("window_duration_minutes")
                 )
             
-            # Generate timestamp for file naming
-            current_timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M")
-            output_dir = f"{self.gold_path}ml_feature/tmp_{current_timestamp_str}"  # directory temporanea
-            final_filename = f"ml_feature_{current_timestamp_str}.snappy.parquet"
-            final_path = f"{self.gold_path}ml_feature/{final_filename}"
-
-            # Scrivi in una sola partizione
-            final_ml_features.coalesce(1).write \
-                .format("parquet") \
-                .option("compression", "snappy") \
-                .mode("overwrite") \
-                .save(output_dir)
-
-            # Trova il file part-*.parquet e rinominalo
-            import os
-            from py4j.java_gateway import java_import
-            java_import(self.spark._jvm, "org.apache.hadoop.fs.Path")
-            fs = self.spark._jvm.org.apache.hadoop.fs.FileSystem.get(self.spark._jsc.hadoopConfiguration())
-            tmp_path = self.spark._jvm.org.apache.hadoop.fs.Path(output_dir)
-            dest_path = self.spark._jvm.org.apache.hadoop.fs.Path(final_path)
-            files = fs.listStatus(tmp_path)
-            for f in files:
-                name = f.getPath().getName()
-                if name.startswith("part-") and name.endswith(".parquet"):
-                    fs.rename(f.getPath(), dest_path)
-            # Rimuovi la cartella temporanea
-            fs.delete(tmp_path, True)
-
-            # NEW: Also publish to Kafka for real-time ML processing
+            # FIRST: Publish to Kafka for real-time ML processing (before MinIO write)
             logger.info("Publishing ML features to Kafka topic 'gold-ml-features'")
+            kafka_success = False
             try:
                 # Convert to JSON and write to Kafka
                 final_ml_features.selectExpr("to_json(struct(*)) AS value") \
@@ -326,14 +299,58 @@ class GoldZoneProcessor:
                     .option("topic", "gold-ml-features") \
                     .save()
                 logger.info("Successfully published ML features to Kafka")
+                kafka_success = True
             except Exception as kafka_error:
                 logger.error(f"Failed to publish to Kafka: {kafka_error}")
                 # Don't fail the entire process if Kafka write fails
 
-            # Log
+            # SECOND: Try to write to MinIO (optional - for data lake storage)
+            minio_success = False
+            try:
+                # Generate timestamp for file naming
+                current_timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M")
+                output_dir = f"{self.gold_path}ml_feature/tmp_{current_timestamp_str}"  # directory temporanea
+                final_filename = f"ml_feature_{current_timestamp_str}.snappy.parquet"
+                final_path = f"{self.gold_path}ml_feature/{final_filename}"
+
+                # Scrivi in una sola partizione
+                final_ml_features.coalesce(1).write \
+                    .format("parquet") \
+                    .option("compression", "snappy") \
+                    .mode("overwrite") \
+                    .save(output_dir)
+
+                # Trova il file part-*.parquet e rinominalo
+                import os
+                from py4j.java_gateway import java_import
+                java_import(self.spark._jvm, "org.apache.hadoop.fs.Path")
+                fs = self.spark._jvm.org.apache.hadoop.fs.FileSystem.get(self.spark._jsc.hadoopConfiguration())
+                tmp_path = self.spark._jvm.org.apache.hadoop.fs.Path(output_dir)
+                dest_path = self.spark._jvm.org.apache.hadoop.fs.Path(final_path)
+                files = fs.listStatus(tmp_path)
+                for f in files:
+                    name = f.getPath().getName()
+                    if name.startswith("part-") and name.endswith(".parquet"):
+                        fs.rename(f.getPath(), dest_path)
+                # Rimuovi la cartella temporanea
+                fs.delete(tmp_path, True)
+                
+                logger.info(f"Successfully wrote ML features to MinIO: {final_path}")
+                minio_success = True
+                
+            except Exception as minio_error:
+                logger.error(f"Failed to write to MinIO: {minio_error}")
+                # Don't fail the entire process if MinIO write fails
+                # The important part (Kafka) was already done above
+
+            # Log results
             record_count = final_ml_features.count()
-            logger.info(f"Created ML feature file: {final_path}")
-            logger.info(f"Generated {record_count} records (expected: 3)")
+            logger.info(f"Generated {record_count} ML feature records (expected: 3)")
+            logger.info(f"Kafka publishing: {'SUCCESS' if kafka_success else 'FAILED'}")
+            logger.info(f"MinIO storage: {'SUCCESS' if minio_success else 'FAILED'}")
+            
+            if minio_success:
+                logger.info(f"Created ML feature file: {final_path}")
             
             # Log details for each field
             for field_id in expected_fields:

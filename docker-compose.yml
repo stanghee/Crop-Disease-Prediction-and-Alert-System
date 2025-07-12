@@ -210,7 +210,7 @@ services:
       
       # Data Lake Paths
       GOLD_PATH: s3a://gold/
-      ML_PATH: s3a://ml/
+      ML_PATH: s3a://ml-models/
       
       # Timezone
       TIMEZONE: Europe/Rome
