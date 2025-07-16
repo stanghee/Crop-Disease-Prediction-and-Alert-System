@@ -6,17 +6,15 @@ Handles training with any amount of available data (not just 30 days)
 
 import logging
 from datetime import datetime, timedelta
-from sklearn.ensemble import IsolationForest
-from sklearn.preprocessing import StandardScaler
-import numpy as np
-import pandas as pd
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, count
-import pickle
 import json
 
-from utils.feature_config import CORE_FEATURES, MODEL_CONFIG
+from pyspark.ml.feature import VectorAssembler, StandardScaler as SparkStandardScaler
+from pyspark.ml.clustering import KMeans
+from utils.feature_config import CORE_FEATURES, KMEANS_CONFIG
 from storage.model_manager import ModelManager
+from pyspark.sql.types import DoubleType
 
 logger = logging.getLogger(__name__)
 
@@ -27,65 +25,62 @@ class AnomalyTrainer:
         self.spark = spark
         self.model_manager = ModelManager()
         
-    def train_model(self, days_back: int = 30, min_records: int = 100):
+    def train_model(self, days_back: int = 30, min_records: int = 100, k: int = None):
         """
-        Train Isolation Forest model
+        Train KMeans model (Spark ML)
         Args:
             days_back: Number of days of historical data to use
             min_records: Minimum records needed for training
+            k: Number of clusters (overrides config if provided)
         """
         logger.info(f"Starting training with {days_back} days of data")
-        
         try:
-            # Load training data from Gold zone
             end_date = datetime.now()
             start_date = end_date - timedelta(days=days_back)
-            
-            # Read Gold zone ML features
             gold_df = self.spark.read.parquet("s3a://gold/ml_feature/**/*.parquet") \
                 .filter(col("processing_timestamp") >= start_date) \
                 .filter(col("processing_timestamp") <= end_date)
-            
-            # Check if we have enough data
             record_count = gold_df.count()
             logger.info(f"Found {record_count} records for training")
-            
             if record_count < min_records:
-                # If not enough data, take whatever we have
                 logger.warning(f"Only {record_count} records available (< {min_records})")
                 gold_df = self.spark.read.parquet("s3a://gold/ml_feature/**/*.parquet")
                 record_count = gold_df.count()
-                
-                # TODO: justify this, it's a hack to allow training with even 1 record for testing
-                if record_count < 1:  # Absolute minimum - allow training with even 1 record for testing
+                if record_count < 1:
                     raise ValueError(f"Not enough data for training: {record_count} records")
-            
-            # Select features and convert to Pandas
-            feature_df = gold_df.select(CORE_FEATURES + ["field_id", "processing_timestamp"])
-            pandas_df = feature_df.toPandas()
-            
-            # Handle missing values
-            pandas_df[CORE_FEATURES] = pandas_df[CORE_FEATURES].fillna(pandas_df[CORE_FEATURES].median())
-            
-            # Prepare features
-            X = pandas_df[CORE_FEATURES].values
-            
-            # Train scaler
-            scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X)
-            
-            # Train Isolation Forest
-            logger.info("Training Isolation Forest model...")
-            model = IsolationForest(**MODEL_CONFIG)
-            model.fit(X_scaled)
-            
-            # Calculate training metrics
-            predictions = model.predict(X_scaled)
-            anomaly_scores = model.score_samples(X_scaled)
-            
-            anomaly_count = (predictions == -1).sum()
-            anomaly_rate = anomaly_count / len(predictions)
-            
+            # Handle missing values (fill with median)
+            for f in CORE_FEATURES:
+                median = gold_df.approxQuantile(f, [0.5], 0.01)[0]
+                gold_df = gold_df.na.fill({f: median})
+            # Filtra righe con ancora null
+            for f in CORE_FEATURES:
+                gold_df = gold_df.filter(col(f).isNotNull())
+            # Cast esplicito a DoubleType per tutte le feature
+            for f in CORE_FEATURES:
+                gold_df = gold_df.withColumn(f, col(f).cast(DoubleType()))
+            # Assembla features
+            assembler = VectorAssembler(inputCols=CORE_FEATURES, outputCol="features_vec")
+            assembled_df = assembler.transform(gold_df)
+            # (Rimosso filtro su size(features_vec))
+            # Scale features (optional, but common for KMeans)
+            scaler = SparkStandardScaler(inputCol="features_vec", outputCol="scaled_features", withMean=True, withStd=True)
+            scaler_model = scaler.fit(assembled_df)
+            scaled_df = scaler_model.transform(assembled_df)
+            # KMeans config
+            k_val = k if k is not None else KMEANS_CONFIG['k']
+            kmeans = KMeans(featuresCol="scaled_features", k=k_val, maxIter=KMEANS_CONFIG['maxIter'], seed=KMEANS_CONFIG['seed'])
+            model = kmeans.fit(scaled_df)
+            # Calcola distanze dal centroide più vicino per metriche
+            from pyspark.ml.linalg import Vectors
+            import numpy as np
+            centers = model.clusterCenters()
+            def min_distance(vec):
+                v = np.array(vec.toArray())
+                return float(np.min([np.linalg.norm(v - np.array(c)) for c in centers]))
+            dist_udf = self.spark.udf.register("min_distance", min_distance)
+            metrics_df = scaled_df.withColumn("distance", dist_udf(col("scaled_features")))
+            avg_distance = metrics_df.agg({"distance": "avg"}).collect()[0][0]
+            max_distance = metrics_df.agg({"distance": "max"}).collect()[0][0]
             # Model metadata
             metadata = {
                 'model_version': f"v{datetime.now().strftime('%Y-%m-%d_%H-%M')}",
@@ -94,33 +89,24 @@ class AnomalyTrainer:
                 'record_count': int(record_count),
                 'days_of_data': days_back,
                 'actual_date_range': {
-                    'start': pandas_df['processing_timestamp'].min().isoformat(),
-                    'end': pandas_df['processing_timestamp'].max().isoformat()
+                    'start': str(gold_df.agg({"processing_timestamp": "min"}).collect()[0][0]),
+                    'end': str(gold_df.agg({"processing_timestamp": "max"}).collect()[0][0])
                 },
-                'model_config': MODEL_CONFIG,
+                'model_config': {'k': k_val, 'maxIter': KMEANS_CONFIG['maxIter'], 'seed': KMEANS_CONFIG['seed']},
                 'training_metrics': {
-                    'anomaly_count': int(anomaly_count),
-                    'anomaly_rate': float(anomaly_rate),
-                    'score_distribution': {
-                        'min': float(anomaly_scores.min()),
-                        'max': float(anomaly_scores.max()),
-                        'mean': float(anomaly_scores.mean()),
-                        'std': float(anomaly_scores.std())
-                    }
+                    'avg_distance': float(avg_distance),
+                    'max_distance': float(max_distance)
                 }
             }
-            
-            # Save model and scaler
-            model_path = self.model_manager.save_model(model, scaler, metadata)
+            # Salva modello Spark ML
+            model_path = self.model_manager.save_model(model, scaler_model, metadata)
             logger.info(f"Model saved to: {model_path}")
-            
             return {
                 'status': 'success',
                 'model_version': metadata['model_version'],
                 'training_metrics': metadata['training_metrics'],
                 'model_path': model_path
             }
-            
         except Exception as e:
             logger.error(f"Training failed: {e}")
             return {

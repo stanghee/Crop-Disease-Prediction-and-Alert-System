@@ -14,18 +14,16 @@ CORE_FEATURES = [
     'sensor_anomaly_rate'     # existing anomaly rate from data quality
 ]
 
-# Model configuration
-MODEL_CONFIG = {
-    'contamination': 0.05,    # Expect 5% anomalies
-    'n_estimators': 100,
-    'max_samples': 'auto',
-    'random_state': 42,
-    'n_jobs': -1              # Use all cores
+# Model configuration for KMeans
+KMEANS_CONFIG = {
+    'k': 3,                # Numero di cluster, configurabile (ridotto per test)
+    'maxIter': 20,         # Iterazioni massime
+    'seed': 42             # Random seed
 }
 
-# Anomaly thresholds
-ANOMALY_THRESHOLD = 0.7       # Score > 0.7 = anomaly
-CRITICAL_THRESHOLD = 0.9      # Score > 0.9 = critical
+# Soglie per distanza dal centroide (anomaly detection)
+ANOMALY_DISTANCE_THRESHOLD = 0.01   # Distanza > soglia = anomalia (ulteriormente abbassata per test)
+CRITICAL_DISTANCE_THRESHOLD = 0.05  # Distanza > soglia critica = criticità (ulteriormente abbassata per test)
 
 # Processing configuration  
 BATCH_INTERVAL_SECONDS = 30   # Process every 30 seconds

@@ -14,10 +14,14 @@ from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from pyspark.sql.functions import pandas_udf
 import pickle
+from pyspark.ml.feature import VectorAssembler
+from pyspark.sql.functions import udf
+from pyspark.sql.types import FloatType, BooleanType, StringType
+from utils.feature_config import CORE_FEATURES, KMEANS_CONFIG, ANOMALY_DISTANCE_THRESHOLD, CRITICAL_DISTANCE_THRESHOLD
 
-from utils.feature_config import CORE_FEATURES, ANOMALY_THRESHOLD, CRITICAL_THRESHOLD
 from storage.model_manager import ModelManager
 from storage.postgres_client import PostgresClient
+import builtins
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +32,14 @@ class StreamingPredictor:
         self.spark = spark
         self.model_manager = ModelManager()
         self.postgres_client = PostgresClient()
-        
-        # Load model metadata on initialization
-        self.model, self.scaler, self.metadata = self.model_manager.load_latest_model()
+        # Carica modello e scaler Spark ML
+        self.model, self.scaler, self.metadata = self.model_manager.load_latest_model(spark)
         if not self.model:
             logger.warning("No model available for inference - will load when needed")
             self.metadata = {'model_version': 'no_model'}
-        
+        else:
+            self.centers = [c for c in self.model.clusterCenters()]
+
     def start_streaming(self):
         """Start the streaming inference pipeline"""
         logger.info("Starting streaming inference pipeline")
@@ -76,154 +81,117 @@ class StreamingPredictor:
         return [query1, query2]
     
     def _detect_anomalies(self, df):
-        """Apply anomaly detection to streaming data using Pandas UDF"""
-        
-        # Pandas UDF for anomaly detection - uses global model variables
-        @pandas_udf(returnType=StructType([
-            StructField("anomaly_score", FloatType()),
-            StructField("is_anomaly", BooleanType()),
-            StructField("severity", StringType()),
-            StructField("recommendations", StringType())
-        ]))
-        def predict_anomaly_batch(features_series):
-            try:
-                # Import required modules inside UDF
-                import numpy as np
-                import pandas as pd
-                from utils.feature_config import ANOMALY_THRESHOLD, CRITICAL_THRESHOLD
-                
-                # Define inline recommendation function
-                def generate_inline_recommendations(anomaly_score, temp, humidity, soil_ph, temp_diff, humidity_diff, anomaly_rate):
-                    recommendations = []
-                    
-                    # Base recommendations based on anomaly score
-                    if anomaly_score > 0.9:
-                        recommendations.append("IMMEDIATE INTERVENTION REQUIRED")
-                    elif anomaly_score > 0.7:
-                        recommendations.append("WARNING: Critical conditions detected")
-                    elif anomaly_score > 0.5:
-                        recommendations.append("Enhanced monitoring recommended")
-                    else:
-                        recommendations.append("Normal conditions - continue monitoring")
-                    
-                    # Simple temperature-based recommendations
-                    if temp > 30:
-                        recommendations.append("High temperature: consider irrigation and shading")
-                    elif temp < 10:
-                        recommendations.append("Low temperature: protect crops from frost")
-                    
-                    # Simple humidity-based recommendations
-                    if humidity > 85:
-                        recommendations.append("High humidity: fungal risk - improve ventilation")
-                    elif humidity < 40:
-                        recommendations.append("Low humidity: increase irrigation")
-                    
-                    # Simple soil pH recommendations
-                    if soil_ph < 6.0:
-                        recommendations.append("Acidic pH: consider liming")
-                    elif soil_ph > 7.5:
-                        recommendations.append("Alkaline pH: consider organic acidifiers")
-                    
-                    # Join recommendations
-                    if len(recommendations) > 1:
-                        return " | ".join(recommendations)
-                    else:
-                        return recommendations[0] if recommendations else "No specific recommendations"
-                
-                # Load model and scaler inside UDF (this will be cached per worker)
-                from storage.model_manager import ModelManager
-                model_manager = ModelManager()
-                model, scaler, metadata = model_manager.load_latest_model()
-                
-                if model is None or scaler is None:
-                    # Return default values if no model available
-                    return pd.DataFrame({
-                        'anomaly_score': [0.0] * len(features_series),
-                        'is_anomaly': [False] * len(features_series),
-                        'severity': ['NO_MODEL'] * len(features_series),
-                        'recommendations': ['Model not available - check training status'] * len(features_series)
-                    })
-                
-                # Convert features to numpy array
-                features_list = features_series.tolist()
-                X = np.array(features_list)
-                
-                # Scale features
-                X_scaled = scaler.transform(X)
-                
-                # Get anomaly scores
-                scores = model.score_samples(X_scaled)
-                
-                # Convert scores to anomaly probabilities
-                normalized_scores = -scores  # Invert so positive = more anomalous
-                normalized_scores = 1 / (1 + np.exp(-normalized_scores * 5))
-                
-                # Determine anomalies and severity
-                is_anomalies = normalized_scores > ANOMALY_THRESHOLD
-                severities = []
-                recommendations = []
-                
-                for i, score in enumerate(normalized_scores):
-                    # Get features for this record
-                    features = features_list[i]
-                    temp, humidity, soil_ph, temp_diff, humidity_diff, anomaly_rate = features
-                    
-                    # Determine severity
-                    if score > CRITICAL_THRESHOLD:
-                        severities.append("CRITICAL")
-                    elif score > ANOMALY_THRESHOLD:
-                        severities.append("HIGH")
-                    else:
-                        severities.append("NORMAL")
-                    
-                    # Generate simple recommendations inline
-                    rec = generate_inline_recommendations(score, temp, humidity, soil_ph, temp_diff, humidity_diff, anomaly_rate)
-                    recommendations.append(rec)
-                
-                return pd.DataFrame({
-                    'anomaly_score': normalized_scores.astype(float),
-                    'is_anomaly': is_anomalies.astype(bool),
-                    'severity': severities,
-                    'recommendations': recommendations
-                })
-                
-            except Exception as e:
-                logger.error(f"Batch prediction error: {e}")
-                # Return error values for the entire batch
-                return pd.DataFrame({
-                    'anomaly_score': [0.0] * len(features_series),
-                    'is_anomaly': [False] * len(features_series),
-                    'severity': ['ERROR'] * len(features_series),
-                    'recommendations': ['Processing error - contact technical support'] * len(features_series)
-                })
-        
-        # Create feature array and apply Pandas UDF
-        return df \
-            .withColumn("feature_array", array([col(f) for f in CORE_FEATURES])) \
-            .withColumn("prediction", predict_anomaly_batch(col("feature_array"))) \
-            .select(
-                col("field_id"),
-                col("location"),
-                col("processing_timestamp"),
-                col("prediction.anomaly_score"),
-                col("prediction.is_anomaly"),
-                col("prediction.severity"),
-                col("prediction.recommendations"),
+        """Apply anomaly detection using Spark ML KMeans and distance from centroid"""
+        if not self.model or not self.scaler:
+            logger.warning("No model or scaler available for inference")
+            return df.withColumn("anomaly_score", lit(0.0)) \
+                     .withColumn("is_anomaly", lit(False)) \
+                     .withColumn("severity", lit("NO_MODEL")) \
+                     .withColumn("recommendations", lit("Model not available - check training status"))
+        # Assembla e scala le feature
+        assembler = VectorAssembler(inputCols=CORE_FEATURES, outputCol="features_vec")
+        assembled_df = assembler.transform(df)
+        scaled_df = self.scaler.transform(assembled_df)
+        # Predici cluster
+        pred_df = self.model.transform(scaled_df)
+        # Calcola distanza dal centroide assegnato
+        import numpy as np
+        centers = self.centers
+        def distance_from_centroid(features, cluster):
+            v = np.array(features)
+            c = np.array(centers[cluster])
+            return float(np.linalg.norm(v - c))
+        distance_udf = udf(distance_from_centroid, FloatType())
+        pred_df = pred_df.withColumn("distance", distance_udf(col("scaled_features"), col("prediction")))
+        # DEBUG: stampa le distanze e i field_id
+        pred_df = pred_df.withColumn("_debug", \
+            udf(lambda f, d: print(f"DEBUG: field_id={f}, distance={d}"), StringType())(col("field_id"), col("distance")))
+        # Determina anomalia e severity
+        pred_df = pred_df.withColumn(
+            "is_anomaly", col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD)
+        ).withColumn(
+            "severity", when(col("distance") > lit(CRITICAL_DISTANCE_THRESHOLD), "CRITICAL")
+                        .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD), "HIGH")
+                        .otherwise("NORMAL")
+        )
+        # Raccomandazioni
+        def generate_recommendations(distance, temp, humidity, soil_ph, temp_diff, humidity_diff, anomaly_rate):
+            recommendations = []
+            # Base sulle distanze
+            if distance > CRITICAL_DISTANCE_THRESHOLD:
+                recommendations.append("IMMEDIATE INTERVENTION REQUIRED")
+            elif distance > ANOMALY_DISTANCE_THRESHOLD:
+                recommendations.append("WARNING: Outlier detected - enhanced monitoring recommended")
+            else:
+                recommendations.append("Normal conditions - continue monitoring")
+            # Temperature
+            if temp > 30:
+                recommendations.append("High temperature: consider irrigation and shading")
+            elif temp < 10:
+                recommendations.append("Low temperature: protect crops from frost")
+            # Humidity
+            if humidity > 85:
+                recommendations.append("High humidity: fungal risk - improve ventilation")
+            elif humidity < 40:
+                recommendations.append("Low humidity: increase irrigation")
+            # Soil pH
+            if soil_ph < 6.0:
+                recommendations.append("Acidic pH: consider liming")
+            elif soil_ph > 7.5:
+                recommendations.append("Alkaline pH: consider organic acidifiers")
+            # Differenziali
+            if builtins.abs(temp_diff) > 5:
+                recommendations.append("High temperature differential: verify local microclimate and sensors")
+            if builtins.abs(humidity_diff) > 15:
+                recommendations.append("High humidity differential: verify irrigation and drainage")
+            if anomaly_rate > 0.3:
+                recommendations.append("High anomaly rate: verify sensor operation and calibration")
+            if temp > 25 and humidity > 80:
+                recommendations.append("Ideal conditions for pathogens: apply preventive fungicides")
+            if soil_ph < 6.0 and humidity > 70:
+                recommendations.append("Nutritional stress + humidity: consider fertilizers and drainage")
+            return " | ".join(recommendations) if recommendations else "No specific recommendations"
+        rec_udf = udf(generate_recommendations, StringType())
+        pred_df = pred_df.withColumn(
+            "recommendations",
+            rec_udf(
+                col("distance"),
                 col("sensor_avg_temperature"),
                 col("sensor_avg_humidity"),
                 col("sensor_avg_soil_ph"),
                 col("temp_differential"),
                 col("humidity_differential"),
                 col("sensor_anomaly_rate")
-            ) \
-            .withColumn("model_version", lit(self.metadata['model_version'])) \
-            .withColumn("prediction_timestamp", current_timestamp())
+            )
+        )
+        # Output finale
+        return pred_df.select(
+            col("field_id"),
+            col("location"),
+            col("processing_timestamp"),
+            col("distance").alias("anomaly_score"),
+            col("is_anomaly"),
+            col("severity"),
+            col("recommendations"),
+            col("sensor_avg_temperature"),
+            col("sensor_avg_humidity"),
+            col("sensor_avg_soil_ph"),
+            col("temp_differential"),
+            col("humidity_differential"),
+            col("sensor_anomaly_rate")
+        ).withColumn("model_version", lit(self.metadata['model_version'])) \
+         .withColumn("prediction_timestamp", current_timestamp())
     
     def _write_to_kafka(self, df):
         """Write anomalies to Kafka ml-anomalies topic"""
-        
+        # DEBUG: stampa field_id, distance, is_anomaly prima del filtro
+        debug_df = df.withColumn(
+            "_debug_kafka", udf(lambda f, d, a: print(f"KAFKA DEBUG: field_id={f}, distance={d}, is_anomaly={a}"), StringType())(
+                col("field_id"), col("anomaly_score"), col("is_anomaly")
+            )
+        )
         # Only send anomalies to alert system
-        anomaly_stream = df \
+        anomaly_stream = debug_df \
             .filter(col("is_anomaly") == True) \
             .select(
                 to_json(struct(
@@ -244,7 +212,6 @@ class StreamingPredictor:
                     ).alias("features")
                 )).alias("value")
             )
-        
         query = anomaly_stream.writeStream \
             .format("kafka") \
             .option("kafka.bootstrap.servers", "kafka:9092") \
@@ -252,7 +219,6 @@ class StreamingPredictor:
             .option("checkpointLocation", "/tmp/ml-checkpoints/kafka") \
             .outputMode("append") \
             .start()
-        
         return query
     
     def _write_to_postgres(self, df):
