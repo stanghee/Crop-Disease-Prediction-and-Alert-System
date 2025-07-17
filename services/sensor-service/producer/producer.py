@@ -70,7 +70,11 @@ def inject_anomaly(sensor_type, value):
         return value
 
 def generate_sensor_data(timestamp, field_id, config):
-    data = {"timestamp": timestamp.isoformat(), "field_id": field_id}
+    data = {
+        "timestamp": timestamp.isoformat(), 
+        "field_id": field_id,
+        "location": "Verona"  # Aggiunta della variabile location
+    }
     
     for sensor in ["temperature", "humidity", "soil_ph"]:
         value = generate_value(config[sensor])
@@ -88,6 +92,7 @@ def generate_sensor_data(timestamp, field_id, config):
 def main():
     logger.info(f"✅ Sensor simulation started with timezone {TIMEZONE}")
     logger.info(f"🎯 Anomaly probability: {ANOMALY_PROB:.3f} ({ANOMALY_PROB*100:.1f}%)")
+    logger.info(f"📍 Location: Verona")
     logger.info("📡 CTRL+C to stop...\n")
     
     while True:

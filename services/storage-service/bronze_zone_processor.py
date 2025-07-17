@@ -43,6 +43,7 @@ class BronzeZoneProcessor:
         sensor_schema = StructType([
             StructField("timestamp", StringType(), True),
             StructField("field_id", StringType(), True),
+            StructField("location", StringType(), True),
             StructField("temperature", DoubleType(), True),
             StructField("humidity", DoubleType(), True),
             StructField("soil_ph", DoubleType(), True)

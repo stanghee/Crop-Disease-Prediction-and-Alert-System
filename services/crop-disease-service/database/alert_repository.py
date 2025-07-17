@@ -6,7 +6,6 @@ Centralized database operations for alerts
 
 import os
 import logging
-import json
 import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -62,8 +61,8 @@ class AlertRepository:
             insert_query = """
                 INSERT INTO alerts (
                     zone_id, alert_timestamp, alert_type, severity, message,
-                    details, prediction_id, status
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    status
+                ) VALUES (%s, %s, %s, %s, %s, %s)
             """
             
             # Prepare data for batch insert
@@ -75,8 +74,6 @@ class AlertRepository:
                     alert.get('alert_type'),
                     alert.get('severity'),
                     alert.get('message'),
-                    json.dumps(alert.get('details', {})),
-                    alert.get('prediction_id'),
                     alert.get('status', 'ACTIVE')
                 ))
             
@@ -123,8 +120,6 @@ class AlertRepository:
                     alert_type,
                     severity,
                     message,
-                    details,
-                    prediction_id,
                     status,
                     created_at
                 FROM alerts 
@@ -163,7 +158,7 @@ class AlertRepository:
             logger.error(f"Error retrieving alerts from database: {e}")
             return []
     
-    def update_alert_status(self, alert_id: int, new_status: str, user_id: Optional[str] = None) -> bool:
+    def update_alert_status(self, alert_id: int, new_status: str) -> bool:
         """Update alert status (acknowledged, resolved, etc.)"""
         try:
             conn = self._get_connection()
@@ -171,20 +166,11 @@ class AlertRepository:
             
             update_query = """
                 UPDATE alerts 
-                SET status = %s, 
-                    acknowledged_by = %s,
-                    acknowledged_at = CASE 
-                        WHEN %s = 'ACKNOWLEDGED' THEN NOW() 
-                        ELSE acknowledged_at 
-                    END,
-                    resolved_at = CASE 
-                        WHEN %s = 'RESOLVED' THEN NOW() 
-                        ELSE resolved_at 
-                    END
+                SET status = %s
                 WHERE id = %s
             """
             
-            cursor.execute(update_query, (new_status, user_id, new_status, new_status, alert_id))
+            cursor.execute(update_query, (new_status, alert_id))
             conn.commit()
             
             rows_affected = cursor.rowcount

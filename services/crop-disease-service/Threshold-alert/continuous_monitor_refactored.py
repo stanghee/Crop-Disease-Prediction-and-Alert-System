@@ -173,7 +173,7 @@ class ContinuousMonitorRefactored:
             'components': {
                 'monitor_service': self.is_running,
                 'monitor_thread': self.monitor_thread.is_alive() if self.monitor_thread else False,
-                'alert_manager': self.alert_manager.health_check()['status'] == 'healthy'
+                'alert_consumer': self.alert_consumer.health_check()['status'] == 'healthy'
             },
             'last_successful_check': self.stats['last_check_time'],
             'timestamp': datetime.now().isoformat()

@@ -132,63 +132,49 @@ StructField("ph_valid", BooleanType(), True)
 
 **Gold Transformations**:
 
-#### A) Real-time Metrics Table (`s3a://gold/realtime_metrics/`)
-**30-minute aggregations per field**:
+#### ML Features with Sliding Window (`s3a://gold/ml_features/`)
+**10-minute sliding window aggregations per field**:
 ```python
-- current_temperature, current_humidity, current_soil_ph
-- avg_temperature_30min, std_temperature_30min, min_temperature_30min, max_temperature_30min
-- avg_humidity_30min, std_humidity_30min, min_humidity_30min, max_humidity_30min
-- avg_soil_ph_30min, std_soil_ph_30min
-- temperature_valid_rate_30min, humidity_valid_rate_30min, ph_valid_rate_30min
-- readings_count_30min, temp_range_30min, humidity_range_30min
-- status (HEALTHY/DATA_ISSUE), data_freshness_minutes, is_online
+# Sensor aggregations (10-minute window)
+- sensor_avg_temperature, sensor_std_temperature, sensor_min_temperature, sensor_max_temperature, sensor_temp_range
+- sensor_avg_humidity, sensor_std_humidity, sensor_min_humidity, sensor_max_humidity, sensor_humidity_range
+- sensor_avg_soil_ph, sensor_std_soil_ph, sensor_min_soil_ph, sensor_max_soil_ph, sensor_ph_range
+- sensor_temp_valid_rate, sensor_humidity_valid_rate, sensor_ph_valid_rate
+- sensor_readings_count, sensor_anomaly_count, sensor_anomaly_rate, sensor_data_quality_score
+
+# Weather aggregations (10-minute window)
+- weather_avg_temperature, weather_std_temperature, weather_min_temperature, weather_max_temperature, weather_temp_range
+- weather_avg_humidity, weather_std_humidity, weather_min_humidity, weather_max_humidity, weather_humidity_range
+- weather_avg_wind_speed, weather_std_wind_speed, weather_min_wind_speed, weather_max_wind_speed, weather_wind_range
+- weather_avg_uv_index, weather_std_uv_index, weather_min_uv_index, weather_max_uv_index, weather_uv_range
+- weather_dominant_condition, weather_readings_count
+
+# Derived features
+- temp_differential, humidity_differential
+- environmental_stress_score (HIGH/MEDIUM/LOW)
+- combined_risk_score (HIGH/MEDIUM/LOW)
+- sensor_data_freshness_minutes, weather_data_freshness_minutes
+
+# Processing metadata
+- processing_timestamp, window_start_time, window_end_time, window_duration_minutes
 ```
 
-#### B) Hourly Aggregations Table (`s3a://gold/hourly_aggregations/`)
-**Hourly statistics for trend analysis**:
-```python
-- avg_temperature, std_temperature, min_temperature, max_temperature
-- avg_humidity, std_humidity, min_humidity, max_humidity
-- avg_soil_ph, std_soil_ph
-- temperature_valid_rate, humidity_valid_rate, ph_valid_rate
-- readings_count, temp_range, humidity_range
-- hourly_quality_status (VALID/DATA_ISSUE)
-```
+**Caratteristiche**:
+- **Finestra scorrevole**: 10 minuti di dati aggregati
+- **Join location-based**: Sensor e weather data uniti per location
+- **3 record per file**: Uno per ogni field (field_01, field_02, field_03)
+- **Timestamp nel nome**: `ml_features_YYYY-MM-DD_HH-MM`
+- **Formato**: Parquet compresso con Snappy
+- **Overwrite mode**: Ogni esecuzione sovrascrive il file precedente
 
-#### C) Alert Summary Table (`s3a://gold/alert_summary/`)
-**Data quality and alert metrics**:
-```python
-- invalid_temperature_count, invalid_humidity_count, invalid_ph_count
-- total_readings, invalid_rate
-- alert_status (HIGH/MEDIUM/LOW)
-```
-
-#### D) Field Performance Ranking Table (`s3a://gold/field_performance_ranking/`)
-**Field performance and quality assessment**:
-```python
-- temperature_valid_rate, humidity_valid_rate, ph_valid_rate
-- overall_validity_score, performance_grade (A/B/C/D/F)
-- performance_rank, total_readings
-```
-
-#### E) Dashboard Overview Table (`s3a://gold/dashboard_overview/`)
-**System-wide statistics and KPIs**:
-```python
-- total_fields, grade_a_fields, grade_b_fields, grade_c_fields, grade_d_fields, grade_f_fields
-- avg_validity_score, avg_temperature_valid_rate, avg_humidity_valid_rate, avg_ph_valid_rate
-```
-
-**Storage Format**: Delta Lake (ACID, versioning)
-**Paths**: 
-- `s3a://gold/realtime_metrics/`
-- `s3a://gold/hourly_aggregations/`
-- `s3a://gold/alert_summary/`
-- `s3a://gold/field_performance_ranking/`
-- `s3a://gold/dashboard_overview/`
+**Storage Format**: Parquet (compressed with Snappy)
+**Path**: `s3a://gold/ml_features/ml_features_{timestamp}`
+**Partitioning**: Nessuna (file singolo con timestamp nel nome)
 
 **Availability**:
-- **Dashboard**: SQL queries on Delta tables via Spark SQL
-- **Monitoring**: Real-time KPIs and performance metrics
+- **ML Service**: Lettura diretta dei file ML features per predizioni
+- **Dashboard**: Query sui file ML features per visualizzazioni
+- **Monitoring**: Real-time risk assessment e data quality metrics
 
 ---
 

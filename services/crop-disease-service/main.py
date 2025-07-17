@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-ML Service Main Entry Point
-Dual-Mode Architecture: Real-time Analysis + Batch Predictions
+Crop Disease Service Main Entry Point
+Threshold-Based Alert System Architecture
 """
 
 import os
@@ -15,10 +15,10 @@ from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-# Import ML service components
-from ml_processing.ml_service import MLService
+# Import service components
 from api_service import APIService
-from ml_processing.scheduling.scheduler_service import SchedulerService
+import sys
+sys.path.append('Threshold-alert')
 from continuous_monitor_refactored import ContinuousMonitorRefactored
 
 # Configure logging
@@ -28,26 +28,58 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class MLServiceOrchestrator:
+class CropDiseaseServiceOrchestrator:
     """
-    Main orchestrator for the ML service implementing dual-mode architecture
+    Main orchestrator for the Threshold-Based Alert Service
     """
     
     def __init__(self):
-        self.ml_service = MLService()
-        self.scheduler_service = SchedulerService(self.ml_service)
-        self.continuous_monitor = ContinuousMonitorRefactored(self.ml_service)
+        # Create a simple threshold service for compatibility
+        class SimpleThresholdService:
+            def __init__(self, continuous_monitor=None):
+                self.spark = None  # No Spark session needed for threshold alerts
+                self.continuous_monitor = continuous_monitor
+            
+            def get_status(self):
+                if self.continuous_monitor:
+                    return self.continuous_monitor.get_status()
+                else:
+                    return {"status": "threshold-based-only", "timestamp": datetime.now().isoformat()}
+            
+            def get_active_alerts(self):
+                if (self.continuous_monitor and 
+                    self.continuous_monitor.alert_consumer and 
+                    self.continuous_monitor.alert_consumer.alert_repository):
+                    alerts_list = self.continuous_monitor.alert_consumer.alert_repository.get_active_alerts()
+                    return {
+                        "alerts": alerts_list,
+                        "total": len(alerts_list),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    return {"alerts": [], "total": 0, "timestamp": datetime.now().isoformat()}
+            
+            def get_recent_predictions(self):
+                return {"predictions": [], "total": 0, "timestamp": datetime.now().isoformat()}
+            
+            def shutdown(self):
+                pass
         
-        # Connect the alert consumer to ml_service for API access
-        self.ml_service.set_alert_manager(self.continuous_monitor.alert_consumer)
+        # Initialize threshold-based alert system
+        self.threshold_service = SimpleThresholdService()
+        self.continuous_monitor = ContinuousMonitorRefactored(self.threshold_service)
         
-        self.api_service = APIService(self.ml_service, self.scheduler_service)
+        # Update threshold service with continuous monitor reference
+        self.threshold_service.continuous_monitor = self.continuous_monitor
+        
+        # Initialize API service
+        self.api_service = APIService(self.threshold_service)
         
         # FastAPI app
         self.app = FastAPI(
-            title="Crop Disease Service",
-            description="Dual-Mode Service for Real-time Analysis and Batch Predictions (Refactored Alert System)",
-            version="1.1.0"
+            title="Threshold-Based Alert Service",
+            description="Real-time Agricultural Monitoring with Threshold-Based Alerts",
+            version="1.0.0"
         )
         
         # Add CORS middleware
@@ -68,41 +100,9 @@ class MLServiceOrchestrator:
     def _setup_routes(self):
         """Setup FastAPI routes"""
         
-        @self.app.get("/health")
-        async def health_check():
-            """Health check endpoint"""
-            return {
-                "status": "healthy",
-                "timestamp": datetime.now().isoformat(),
-                "service": "crop-disease-service",
-                "mode": "dual-mode"
-            }
-        
-        @self.app.get("/status")
-        async def get_status():
-            """Get service status"""
-            return self.ml_service.get_status()
-        
-
-        
-        @self.app.get("/predictions/recent")
-        async def get_recent_predictions():
-            """Get recent predictions for dashboard"""
-            return self.ml_service.get_recent_predictions()
-        
-        @self.app.get("/alerts/active")
-        async def get_active_alerts():
-            """Get active alerts"""
-            return self.ml_service.get_active_alerts()
-        
-        @self.app.get("/models/status")
-        async def get_models_status():
-            """Get ML models status"""
-            return self.ml_service.get_models_status()
-        
         @self.app.get("/monitor/status")
         async def get_monitor_status():
-            """Get refactored continuous monitor status"""
+            """Get continuous monitor status"""
             return self.continuous_monitor.get_status()
         
         @self.app.post("/monitor/check")
@@ -122,36 +122,26 @@ class MLServiceOrchestrator:
         """Start background services"""
         logger.info("Starting background services...")
         
-        # Start scheduler for batch processing
-        scheduler_thread = threading.Thread(
-            target=self.scheduler_service.start,
-            daemon=True
-        )
-        scheduler_thread.start()
-        logger.info("Scheduler service started")
-
-        # Start refactored continuous monitor for real-time processing
+        # Start continuous monitor for threshold-based alerts
         monitor_thread = threading.Thread(
             target=self.continuous_monitor.start,
             daemon=True
         )
         monitor_thread.start()
-        logger.info("Refactored continuous monitor service started")
+        logger.info("Continuous monitor service started")
     
     def shutdown(self):
         """Graceful shutdown"""
         logger.info("Shutting down Crop Disease service...")
         self.is_running = False
-        self.scheduler_service.stop()
-        self.ml_service.shutdown()
         self.continuous_monitor.stop()
 
 def main():
     """Main entry point"""
-    logger.info("Starting Crop Disease Service (Dual-Mode Architecture with Refactored Alert System)...")
+    logger.info("Starting Crop Disease Service (Threshold-Based Alert System)...")
     
     # Create orchestrator
-    orchestrator = MLServiceOrchestrator()
+    orchestrator = CropDiseaseServiceOrchestrator()
     
     # Start background services
     orchestrator.start_background_services()
