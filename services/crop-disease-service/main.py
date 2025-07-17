@@ -30,21 +30,34 @@ logger = logging.getLogger(__name__)
 
 class CropDiseaseServiceOrchestrator:
     """
-    Main orchestrator for the Crop Disease Service implementing threshold-based alert system
+    Main orchestrator for the Threshold-Based Alert Service
     """
     
     def __init__(self):
-        # Create a simple ML service mock for compatibility
-        class SimpleMLService:
-            def __init__(self):
+        # Create a simple threshold service for compatibility
+        class SimpleThresholdService:
+            def __init__(self, continuous_monitor=None):
                 self.spark = None  # No Spark session needed for threshold alerts
-                self.alert_manager = None
+                self.continuous_monitor = continuous_monitor
             
             def get_status(self):
-                return {"status": "threshold-based-only", "timestamp": datetime.now().isoformat()}
+                if self.continuous_monitor:
+                    return self.continuous_monitor.get_status()
+                else:
+                    return {"status": "threshold-based-only", "timestamp": datetime.now().isoformat()}
             
             def get_active_alerts(self):
-                return {"alerts": [], "total": 0, "timestamp": datetime.now().isoformat()}
+                if (self.continuous_monitor and 
+                    self.continuous_monitor.alert_consumer and 
+                    self.continuous_monitor.alert_consumer.alert_repository):
+                    alerts_list = self.continuous_monitor.alert_consumer.alert_repository.get_active_alerts()
+                    return {
+                        "alerts": alerts_list,
+                        "total": len(alerts_list),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    return {"alerts": [], "total": 0, "timestamp": datetime.now().isoformat()}
             
             def get_recent_predictions(self):
                 return {"predictions": [], "total": 0, "timestamp": datetime.now().isoformat()}
@@ -53,16 +66,19 @@ class CropDiseaseServiceOrchestrator:
                 pass
         
         # Initialize threshold-based alert system
-        self.ml_service = SimpleMLService()
-        self.continuous_monitor = ContinuousMonitorRefactored(self.ml_service)
+        self.threshold_service = SimpleThresholdService()
+        self.continuous_monitor = ContinuousMonitorRefactored(self.threshold_service)
+        
+        # Update threshold service with continuous monitor reference
+        self.threshold_service.continuous_monitor = self.continuous_monitor
         
         # Initialize API service
-        self.api_service = APIService(self.ml_service)
+        self.api_service = APIService(self.threshold_service)
         
         # FastAPI app
         self.app = FastAPI(
-            title="Crop Disease Service",
-            description="Threshold-Based Alert System for Agricultural Monitoring",
+            title="Threshold-Based Alert Service",
+            description="Real-time Agricultural Monitoring with Threshold-Based Alerts",
             version="1.0.0"
         )
         
@@ -84,53 +100,6 @@ class CropDiseaseServiceOrchestrator:
     def _setup_routes(self):
         """Setup FastAPI routes"""
         
-        @self.app.get("/health")
-        async def health_check():
-            """Health check endpoint"""
-            return {
-                "status": "healthy",
-                "timestamp": datetime.now().isoformat(),
-                "service": "crop-disease-service",
-                "mode": "threshold-based-alerts"
-            }
-        
-        @self.app.get("/status")
-        async def get_status():
-            """Get service status"""
-            return {
-                "service": "crop-disease-service",
-                "architecture": "threshold-based-alerts",
-                "components": {
-                    "continuous_monitor": self.continuous_monitor.is_running,
-                    "alert_consumer": self.continuous_monitor.alert_consumer.is_running if self.continuous_monitor.alert_consumer else False
-                },
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        @self.app.get("/alerts/active")
-        async def get_active_alerts():
-            """Get active alerts"""
-            try:
-                if self.continuous_monitor.alert_consumer and self.continuous_monitor.alert_consumer.alert_repository:
-                    return self.continuous_monitor.alert_consumer.alert_repository.get_active_alerts()
-                else:
-                    return {"alerts": [], "total": 0, "timestamp": datetime.now().isoformat()}
-            except Exception as e:
-                logger.error(f"Error getting active alerts: {e}")
-                return {"error": "Failed to retrieve active alerts", "timestamp": datetime.now().isoformat()}
-        
-        @self.app.get("/alerts/statistics")
-        async def get_alert_statistics():
-            """Get alert statistics"""
-            try:
-                if self.continuous_monitor.alert_consumer and self.continuous_monitor.alert_consumer.alert_repository:
-                    return self.continuous_monitor.alert_consumer.alert_repository.get_alert_statistics()
-                else:
-                    return {"statistics": {}, "timestamp": datetime.now().isoformat()}
-            except Exception as e:
-                logger.error(f"Error getting alert statistics: {e}")
-                return {"error": "Failed to retrieve alert statistics", "timestamp": datetime.now().isoformat()}
-        
         @self.app.get("/monitor/status")
         async def get_monitor_status():
             """Get continuous monitor status"""
@@ -145,18 +114,6 @@ class CropDiseaseServiceOrchestrator:
         async def get_monitor_health():
             """Get monitor health check"""
             return self.continuous_monitor.health_check()
-        
-        @self.app.get("/alerts/configuration")
-        async def get_alert_configuration():
-            """Get alert configuration information"""
-            try:
-                if self.continuous_monitor.alert_consumer and self.continuous_monitor.alert_consumer.alert_factory:
-                    return self.continuous_monitor.alert_consumer.alert_factory.get_configuration_info()
-                else:
-                    return {"configuration": "not_available", "timestamp": datetime.now().isoformat()}
-            except Exception as e:
-                logger.error(f"Error getting alert configuration: {e}")
-                return {"error": "Failed to retrieve alert configuration", "timestamp": datetime.now().isoformat()}
         
         # Add API service routes
         self.api_service.add_routes(self.app)

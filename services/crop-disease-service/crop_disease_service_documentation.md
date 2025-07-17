@@ -1,70 +1,40 @@
-# Crop Disease Service - Dual-Mode Architecture
+# Threshold-Based Alert Service
 
 ## Overview
 
-The Crop Disease Service implements the **Dual-Mode Architecture** for crop disease prediction, providing both **real-time analysis** and **batch predictions** to support agricultural decision-making.
+The Threshold-Based Alert Service implements a **real-time monitoring system** for agricultural monitoring, providing **immediate alert generation** based on configurable thresholds for weather and sensor data.
 
-## Dual-Mode Architecture
+## Threshold-Based Architecture
 
-The system implements a **dual-mode architecture** that combines **real-time monitoring** and **ML batch analysis** to provide comprehensive crop disease risk coverage.
+The system implements a **threshold-based architecture** that provides **real-time monitoring** and **immediate alert generation** for comprehensive agricultural risk coverage.
 
-### Mode 1: Real-time Processing (Every minute)
+### Real-time Processing (Every 10 seconds)
 
 **Purpose**: Immediate monitoring and rapid response
-- **Frequency**: Every minute (1,440 times per day)
-- **Speed**: < 30 seconds processing time
-- **Data**: Sensor and weather data from **Silver layer**
+- **Frequency**: Every 10 seconds (8,640 times per day)
+- **Speed**: < 1 second processing time
+- **Data**: Sensor and weather data from Kafka topics
 - **Logic**: Centralized threshold-based rules
 - **Output**: 
   - `SENSOR_ANOMALY` alerts (field-specific)
   - `WEATHER_ALERT` alerts (regional)
   - Immediate guidance for operators
 - **Storage**: PostgreSQL for fast access
-- **Use**: Daily operational monitoring
-
-### Mode 2: Batch Processing (Every 6 hours)
-
-**Purpose**: Strategic ML predictions and economic analysis
-- **Frequency**: Every 6 hours (00:00, 06:00, 12:00, 18:00)
-- **Speed**: ~30 minutes processing time
-- **Data**: Complete ML features from **Gold layer**
-- **Logic**: Random Forest model with economic analysis
-- **Output**:
-  - `DISEASE_DETECTED` alerts
-  - 7-day disease predictions
-  - Economic impact analysis
-  - Strategic recommendations
-- **Storage**: PostgreSQL for historical analysis
-- **Use**: Strategic planning and business decisions
+- **Use**: Real-time operational monitoring
 
 ## Service Structure
 
 ```
 services/crop-disease-service/
-├── ml_processing/                    # Centralized ML System
-│   ├── __init__.py                   # Main package
-│   ├── ml_service.py                 # Core ML service (batch processing)
-│   ├── models/                       # ML models for Gold layer
-│   │   ├── __init__.py
-│   │   ├── disease_predictor.py      # Random Forest ML model
-│   │   └── alert_generator.py        # Strategic alert generator
-│   ├── data_loading/                 # Data loading for Gold layer
-│   │   ├── __init__.py
-│   │   ├── data_loader.py            # Gold layer data loading
-│   │   └── data_sync_service.py      # PostgreSQL sync
-│   └── scheduling/                   # Batch scheduling
-│       ├── __init__.py
-│       └── scheduler_service.py      # 6-hour batch scheduler
-├── realtime_alert_manager.py         # Real-time alert orchestrator
-├── alert_factory.py                  # Unified alert creation
-├── alert_handlers/                   # Specialized handlers
-│   ├── sensor_alert_handler.py       # Sensor alerts (Silver layer)
-│   └── weather_alert_handler.py      # Weather alerts (Silver layer)
-├── config/                           # Centralized configuration
-│   └── alert_thresholds.py           # Threshold rules & economic impact
+├── Threshold-alert/                  # Threshold-based alert system
+│   ├── alert_factory.py              # Unified alert creation
+│   ├── continuous_monitor_refactored.py  # Real-time monitor
+│   ├── kafka_alert_consumer.py       # Kafka consumer for alerts
+│   └── config/                       # Centralized configuration
+│       └── alert_thresholds.py       # Threshold rules configuration
 ├── database/                         # Database abstraction
-│   └── alert_repository.py           # Alert database operations
-├── continuous_monitor_refactored.py  # Clean real-time monitor
+│   ├── alert_repository.py           # Alert database operations
+│   └── init.sql                      # Database schema
 ├── api_service.py                    # REST API endpoints
 ├── main.py                           # Main orchestrator
 ├── crop_disease_service_documentation.md  # This file
@@ -77,125 +47,85 @@ services/crop-disease-service/
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    REAL-TIME PROCESSING                        │
-│                    (Every minute)                              │
+│                    (Every 10 seconds)                          │
 └─────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
 ┌─────────────────┐    ┌─────────────────┐    
-│   SILVER LAYER  │    │   SILVER LAYER  │    
-│ Sensor Data     │    │ Weather Data    │    
+│   KAFKA TOPICS  │    │   KAFKA TOPICS  │    
+│ iot_valid_data  │    │weather_valid_data│    
 │                 │    │                 │    
 └─────────────────┘    └─────────────────┘    
          │                       │                       
          ▼                       ▼                       
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│SensorAlertHandler│   │WeatherAlertHandler│  │RealtimeAlertManager│
-│ • Thresholds    │    │ • Thresholds    │    │ • Orchestration │
-│ • Validation    │    │ • Validation    │    │ • Statistics    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    KAFKA ALERT CONSUMER                        │
+│ • Consumes sensor and weather data                             │
+│ • Applies threshold rules                                      │
+│ • Generates alerts in real-time                                │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
                     ┌─────────────────────────┐
-                    │    AlertFactory         │
+                    │    ALERT FACTORY        │
                     │ • Unified formatting    │
-                    │ • Economic impact       │
-                    │ • Recommendations       │
+                    │ • Standardized alerts   │
                     └─────────────────────────┘
                                  │
                                  ▼
                     ┌─────────────────────────┐
-                    │  AlertRepository        │
+                    │  ALERT REPOSITORY       │
                     │ • PostgreSQL storage    │
-                    │ • Batch operations      │
+                    │ • Real-time operations  │
                     │ • Statistics            │
                     └─────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                    BATCH PROCESSING                             │
-│                    (Every 6 hours)                              │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                        GOLD LAYER                               │
-│ • ML Features (historical)                                      │
-│ • Integrated sensor + weather data                              │
-│ • Aggregated metrics                                            │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    ML PROCESSING SYSTEM                         │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │  DataLoader     │  │DiseasePredictor │  │AlertGenerator   │  │
-│  │ • Gold layer    │  │ • Random Forest │  │ • Strategic     │  │
-│  │ • Features      │  │ • Probability   │  │ • Economic      │  │
-│  │ • Historical    │  │ • Confidence    │  │ • ROI analysis  │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
+                                 │
+                                 ▼
                     ┌─────────────────────────┐
-                    │  AlertRepository        │
-                    │ • DISEASE_DETECTED      │
-                    │ • Strategic alerts      │
-                    │ • Historical analysis   │
+                    │  CONTINUOUS MONITOR     │
+                    │ • Background processing │
+                    │ • Health monitoring     │
+                    │ • Performance tracking  │
                     └─────────────────────────┘
 ```
 
 ## Core Components
 
-### ML Processing System (`ml_processing/`)
-**Purpose**: Centralized batch ML processing with Gold layer data
+### Threshold-Based Alert System (`Threshold-alert/`)
+**Purpose**: Real-time monitoring and alert generation based on configurable thresholds
 
 #### Core Components:
-- **`ml_service.py`**: Main orchestrator for batch processing
-- **`models/`**: ML models for disease prediction
-  - `disease_predictor.py`: Random Forest model with fallback
-  - `alert_generator.py`: Strategic alert generation
-- **`data_loading/`**: Gold layer data management
-  - `data_loader.py`: ML features loading
-  - `data_sync_service.py`: PostgreSQL synchronization
-- **`scheduling/`**: Batch processing scheduling
-  - `scheduler_service.py`: 6-hour batch scheduler
+- **`kafka_alert_consumer.py`**: Kafka consumer for real-time data processing
+- **`alert_factory.py`**: Unified alert creation and formatting
+- **`continuous_monitor_refactored.py`**: Background monitoring service
+- **`config/alert_thresholds.py`**: Centralized threshold configuration
 
 #### Key Features:
-- **Gold Layer Integration**: Uses aggregated ML features
-- **Batch Processing**: Every 6 hours for strategic predictions
-- **Economic Analysis**: ROI calculations and impact assessment
-- **Model Management**: Training, retraining, versioning
+- **Kafka Integration**: Real-time data consumption from validated topics
+- **Threshold-Based Logic**: Configurable rules for different conditions
+- **Unified Alert Format**: Consistent alert structure across all types
+- **Real-time Processing**: Every 10 seconds monitoring cycle
 
-### Real-time Alert System
-**Purpose**: Immediate monitoring with Silver layer data
+### Database System (`database/`)
+**Purpose**: Centralized data storage and retrieval
 
 #### Core Components:
-- **`realtime_alert_manager.py`**: Central orchestrator
-- **`alert_factory.py`**: Unified alert creation
-- **`alert_handlers/`**: Specialized processors
-  - `sensor_alert_handler.py`: Sensor data processing
-  - `weather_alert_handler.py`: Weather data processing
-- **`config/alert_thresholds.py`**: Centralized configuration
-- **`database/alert_repository.py`**: Database abstraction
+- **`alert_repository.py`**: Database operations for alerts
+- **`init.sql`**: Database schema definition
 
 #### Key Features:
-- **Silver Layer Integration**: Uses real-time sensor and weather data
-- **Centralized Configuration**: No more hardcoded thresholds
-- **Unified Format**: Consistent alert structure
-- **Real-time Processing**: Every minute monitoring
+- **PostgreSQL Storage**: Reliable and fast data storage
+- **Batch Operations**: Efficient bulk insert/update operations
+- **Statistics**: Real-time alert statistics and metrics
+- **Cleanup**: Automatic cleanup of old alerts
 
 ## Alert Types and Data Sources
 
-### Real-time Alerts (Silver Layer)
+### Real-time Alerts (Threshold-Based)
 | Alert Type | Data Source | Frequency | Purpose |
 |------------|-------------|-----------|---------|
-| `SENSOR_ANOMALY` | Silver layer sensors | Every minute | Field-specific monitoring |
-| `WEATHER_ALERT` | Silver layer weather | Every minute | Regional weather protection |
-
-### Batch Alerts (Gold Layer)
-| Alert Type | Data Source | Frequency | Purpose |
-|------------|-------------|-----------|---------|
-| `DISEASE_DETECTED` | Gold layer ML features | Every 6 hours | Strategic disease prediction |
+| `SENSOR_ANOMALY` | Kafka topic: `iot_valid_data` | Every 10 seconds | Field-specific monitoring |
+| `WEATHER_ALERT` | Kafka topic: `weather_valid_data` | Every 10 seconds | Regional weather protection |
 
 ## Configuration Management
 
@@ -213,13 +143,7 @@ WEATHER_THRESHOLDS = [
     ThresholdRule("wind_kph", ">", 40.0, RiskLevel.CRITICAL, "Wind speed extremely high: {value} km/h"),
 ]
 
-# Economic Impact
-ECONOMIC_IMPACT = {
-    'HIGH_TEMPERATURE': {
-        RiskLevel.HIGH: {'potential_loss': 1200, 'treatment_cost': 200},
-        RiskLevel.CRITICAL: {'potential_loss': 2000, 'treatment_cost': 300}
-    }
-}
+
 ```
 
 ## Quick Start
@@ -236,34 +160,27 @@ curl http://localhost:8000/health
 ### 2. Access the API
 ```bash
 # Real-time alerts
-curl http://localhost:8000/alerts/sensors
-curl http://localhost:8000/alerts/weather
-
-# Batch predictions
-curl http://localhost:8000/predictions/recent
+curl http://localhost:8000/api/v1/alerts/sensors
+curl http://localhost:8000/api/v1/alerts/weather
 
 # System status
-curl http://localhost:8000/system/status
+curl http://localhost:8000/api/v1/system/status
+curl http://localhost:8000/api/v1/system/health
+
+# Monitor status
+curl http://localhost:8000/monitor/status
+curl http://localhost:8000/monitor/health
 ```
 
 ## API Endpoints
 
 ### Real-time Alert Endpoints
-- `GET /alerts/sensors` - Get sensor alerts (Silver layer)
-- `GET /alerts/weather` - Get weather alerts (Silver layer)
-- `GET /alerts/statistics` - Get alert statistics
-- `GET /alerts/configuration` - Get threshold configuration
-- `POST /alerts/cleanup` - Clean up old alerts
-
-### Batch Processing Endpoints
-- `GET /batch/status` - Get batch processing status
-- `POST /batch/predict` - Trigger batch prediction
-- `GET /batch/schedule` - Get batch schedule
-- `PUT /batch/schedule` - Update batch schedule
-
-### ML Predictions Endpoints
-- `GET /predictions` - Get recent predictions (Gold layer)
-- `POST /predictions/predict` - Make prediction for field
+- `GET /api/v1/alerts` - Get all alerts
+- `GET /api/v1/alerts/sensors` - Get sensor alerts
+- `GET /api/v1/alerts/weather` - Get weather alerts
+- `GET /api/v1/alerts/statistics` - Get alert statistics
+- `GET /api/v1/alerts/configuration` - Get threshold configuration
+- `POST /api/v1/alerts/cleanup` - Clean up old alerts
 
 ### Monitor Endpoints
 - `GET /monitor/status` - Get real-time monitor status
@@ -271,8 +188,8 @@ curl http://localhost:8000/system/status
 - `GET /monitor/health` - Get monitor health check
 
 ### System Endpoints
-- `GET /system/status` - Get overall system status
-- `GET /system/health` - Health check
+- `GET /api/v1/system/status` - Get overall system status
+- `GET /api/v1/system/health` - Health check
 
 ## Migration Guide
 
@@ -284,7 +201,7 @@ curl http://localhost:8000/system/status
 alerts = data_loader.check_sensor_alerts_from_silver()
 
 # NEW (Current)
-alerts = alert_manager.sensor_handler.get_threshold_violations()
+alerts = continuous_monitor.alert_consumer.get_sensor_alerts()
 ```
 
 #### Weather Alerts:
@@ -293,63 +210,51 @@ alerts = alert_manager.sensor_handler.get_threshold_violations()
 alerts = data_loader.check_weather_alerts()
 
 # NEW (Current)
-alerts = alert_manager.weather_handler.get_threshold_violations()
+alerts = continuous_monitor.alert_consumer.get_weather_alerts()
 ```
 
-#### Batch Processing:
+#### System Status:
 ```python
 # OLD (Legacy)
-from ml_service import MLService
+status = ml_service.get_status()
 
 # NEW (Current)
-from ml_processing.ml_service import MLService
+status = threshold_service.get_status()
 ```
 
 ## Development Guidelines
 
 ### Adding New Alert Types
-1. Create handler in `alert_handlers/`
-2. Add thresholds in `config/alert_thresholds.py`
-3. Update `alert_factory.py` for new alert type
+1. Create handler in `Threshold-alert/alert_handlers/`
+2. Add thresholds in `Threshold-alert/config/alert_thresholds.py`
+3. Update `Threshold-alert/alert_factory.py` for new alert type
 4. Add API endpoints in `api_service.py`
 
-### Adding New ML Models
-1. Create model in `ml_processing/models/`
-2. Update `ml_processing/ml_service.py`
-3. Add to `ml_processing/models/__init__.py`
-4. Update API endpoints
-
 ### Adding New Data Sources
-1. Update `ml_processing/data_loading/data_loader.py` for Gold layer
-2. Update `alert_handlers/` for Silver layer
-3. Add configuration in `config/`
+1. Update `Threshold-alert/kafka_alert_consumer.py` for new Kafka topics
+2. Add configuration in `Threshold-alert/config/`
+3. Update alert handlers for new data format
 
 ## Performance Metrics
 
 ### Real-time Processing
-- **Latency**: < 30 seconds
-- **Frequency**: Every minute
-- **Data Source**: Silver layer
+- **Latency**: < 1 second
+- **Frequency**: Every 10 seconds
+- **Data Source**: Kafka topics (iot_valid_data, weather_valid_data)
 - **Alert Types**: SENSOR_ANOMALY, WEATHER_ALERT
-
-### Batch Processing
-- **Latency**: < 30 minutes
-- **Frequency**: Every 6 hours
-- **Data Source**: Gold layer
-- **Alert Types**: DISEASE_DETECTED
 
 ## Monitoring and Health Checks
 
 ### Service Health
 ```bash
 # Overall health
-curl http://localhost:8000/health
+curl http://localhost:8000/api/v1/system/health
 
 # Real-time monitor
 curl http://localhost:8000/monitor/health
 
-# ML processing
-curl http://localhost:8000/system/status
+# System status
+curl http://localhost:8000/api/v1/system/status
 ```
 
 ### Alert Statistics
@@ -367,13 +272,13 @@ curl http://localhost:8000/alerts/configuration
 2. **Testability**: Modular components with clear interfaces
 3. **Consistency**: Unified alert format across all sources
 4. **Observability**: Better monitoring and statistics
-5. **Extensibility**: Easy to add new alert types and models
-6. **Organization**: Clear separation between real-time and batch processing
-7. **Performance**: Optimized data flow and processing
+5. **Extensibility**: Easy to add new alert types and thresholds
+6. **Organization**: Clear separation between real-time monitoring components
+7. **Performance**: Optimized real-time data flow and processing
 8. **Reliability**: Better error handling and fallback mechanisms
 
 ---
 
-**The Crop Disease Service provides a clean, maintainable, and scalable architecture for comprehensive crop disease monitoring and prediction!**
+**The Threshold-Based Alert Service provides a clean, maintainable, and scalable architecture for comprehensive agricultural monitoring!**
 
 

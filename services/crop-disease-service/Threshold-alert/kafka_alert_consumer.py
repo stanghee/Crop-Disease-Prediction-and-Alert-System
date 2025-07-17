@@ -348,7 +348,7 @@ class KafkaAlertConsumer:
         return alerts
     
     def _map_condition_to_alert_type(self, condition: str, operator: str, value: Any) -> str:
-        """Map condition to alert type for economic impact calculation"""
+        """Map condition to alert type"""
         if condition == 'temperature' or condition == 'temp_c':
             return 'HIGH_TEMPERATURE' if operator == '>' else 'LOW_TEMPERATURE'
         elif condition == 'humidity':
