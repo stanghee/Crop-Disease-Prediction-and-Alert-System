@@ -31,25 +31,9 @@ class PostgresClient:
     
     def ensure_tables(self):
         """Create tables if they don't exist"""
-        create_predictions_table = """
-        CREATE TABLE IF NOT EXISTS ml_predictions (
-            prediction_id SERIAL PRIMARY KEY,
-            timestamp TIMESTAMP NOT NULL,
-            field_id VARCHAR(50) NOT NULL,
-            location VARCHAR(100),
-            anomaly_score FLOAT NOT NULL,
-            is_anomaly BOOLEAN NOT NULL,
-            severity VARCHAR(20),
-            recommendations TEXT,
-            model_version VARCHAR(50),
-            features JSONB,
-            processing_time_ms INT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_field_timestamp ON ml_predictions(field_id, timestamp);
-        CREATE INDEX IF NOT EXISTS idx_anomaly ON ml_predictions(is_anomaly, timestamp);
-        """
+        # Note: Table creation is handled by init.sql in crop-disease-service
+        # This method is kept for compatibility but doesn't create tables
+        logger.info("Using existing ml_predictions table from init.sql")
         
         create_metrics_table = """
         CREATE TABLE IF NOT EXISTS ml_metrics (
@@ -82,7 +66,7 @@ class PostgresClient:
         
         insert_query = """
         INSERT INTO ml_predictions (
-            timestamp, field_id, location, anomaly_score, 
+            prediction_timestamp, field_id, location, anomaly_score, 
             is_anomaly, severity, recommendations, model_version, features
         ) VALUES (
             %(timestamp)s, %(field_id)s, %(location)s, %(anomaly_score)s,
@@ -162,7 +146,7 @@ class PostgresClient:
         query = """
         SELECT * FROM ml_predictions 
         WHERE (%s IS NULL OR field_id = %s)
-        ORDER BY timestamp DESC
+        ORDER BY prediction_timestamp DESC
         LIMIT %s
         """
         
