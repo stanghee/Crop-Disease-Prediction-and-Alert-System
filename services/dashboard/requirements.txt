@@ -9,6 +9,10 @@ altair==5.1.2
 matplotlib==3.8.0
 seaborn==0.13.0
 
+# Mapping and geographic visualization
+folium==0.14.0
+streamlit-folium==0.13.0
+
 # Date/time handling
 python-dateutil==2.8.2
 pytz==2023.3

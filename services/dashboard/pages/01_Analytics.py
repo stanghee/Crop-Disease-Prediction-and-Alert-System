@@ -19,8 +19,8 @@ from streamlit_autorefresh import st_autorefresh
 
 # Page configuration
 st.set_page_config(
-    page_title="📊 Analytics - Crop Disease Dashboard",
-    page_icon="📊",
+    page_title="Analytics - Crop Disease Dashboard",
+    page_icon=None,
     layout="wide"
 )
 
@@ -28,26 +28,26 @@ st.set_page_config(
 API_BASE_URL = "http://crop-disease-service:8000/api/v1"
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 
-st.title("📊 Analytics and Historical Trends")
+st.title("Analytics and Historical Trends")
 st.markdown("---")
 
 # Sidebar controls
 with st.sidebar:
-    st.header("🔧 Analytics Settings")
+    st.header("Analytics Settings")
     
     # Field filters
-    st.subheader("🌾 Field Selection")
+    st.subheader("Field Selection")
     show_all_fields = st.checkbox("All fields", value=True)
     
     if not show_all_fields:
         selected_fields = st.multiselect(
             "Select specific fields",
-            ["field_01", "field_02", "field_03", "field_04", "field_05"],
+            ["field_01", "field_02", "field_03"],
             default=["field_01", "field_02"]
         )
     
     # Weather location selection
-    st.subheader("🌤️ Weather Location Selection")
+    st.subheader("Weather Location Selection")
     show_all_locations = st.checkbox("All locations", value=True)
     
     if not show_all_locations:
@@ -58,7 +58,7 @@ with st.sidebar:
         )
     
     # Analysis type
-    st.subheader("📈 Analysis Type")
+    st.subheader("Analysis Type")
     analysis_type = st.selectbox(
         "Select analysis",
         ["Real-time Data"]
@@ -132,7 +132,7 @@ st_autorefresh(interval=60 * 1000, key="realtime_data_autorefresh")
 
 # Main layout
 if analysis_type == "Real-time Data":
-    st.header("🌐 Real-time Data")
+    st.header("Real-time Data")
     
     # Get real data from Kafka
     iot_data, weather_data = get_latest_kafka_data()
@@ -140,7 +140,7 @@ if analysis_type == "Real-time Data":
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("📡 IoT Sensor Data")
+        st.subheader("IoT Sensor Data")
         
         if iot_data:
             # Convert to DataFrame
@@ -198,18 +198,18 @@ if analysis_type == "Real-time Data":
                 st.plotly_chart(fig_ph, use_container_width=True)
                 
                 # Current values table
-                st.subheader("📊 Current Sensor Values")
+                st.subheader("Current Sensor Values")
                 display_sensors = latest_sensors[['field_id', 'temperature', 'humidity', 'soil_ph', 'timestamp']].copy()
                 display_sensors.columns = ['Field', 'Temperature (°C)', 'Humidity (%)', 'Soil pH', 'Timestamp']
                 st.dataframe(display_sensors, use_container_width=True)
             else:
                 st.info("No sensor data available for the selected fields")
         else:
-            st.warning("⚠️ Unable to retrieve sensor data from Kafka")
+            st.warning("Unable to retrieve sensor data from Kafka")
             st.info("Check that the Kafka service is running and that producers are sending data")
     
     with col2:
-        st.subheader("🌤️ Weather Data")
+        st.subheader("Weather Data")
         
         if weather_data:
             # Convert to DataFrame
@@ -260,17 +260,17 @@ if analysis_type == "Real-time Data":
                 st.plotly_chart(fig_wind, use_container_width=True)
                 
                 # Current weather values table
-                st.subheader("📊 Current Weather Values")
+                st.subheader("Current Weather Values")
                 display_weather = latest_weather[['location', 'temp_c', 'humidity', 'wind_kph', 'timestamp']].copy()
                 display_weather.columns = ['Location', 'Temperature (°C)', 'Humidity (%)', 'Wind (km/h)', 'Timestamp']
                 st.dataframe(display_weather, use_container_width=True)
             else:
                 st.info("No weather data available for the selected locations")
         else:
-            st.warning("⚠️ Unable to retrieve weather data from Kafka")
+            st.warning("Unable to retrieve weather data from Kafka")
             st.info("Check that the Kafka service is running and that producers are sending data")
 
 # Footer
 st.markdown("---")
-st.caption(f"📊 Analytics generated on {datetime.now().strftime('%d/%m/%Y at %H:%M:%S')}")
-st.caption("💡 **Tip**: Use the filters in the sidebar to customize the analysis") 
+st.caption(f"Analytics generated on {datetime.now().strftime('%d/%m/%Y at %H:%M:%S')}")
+st.caption("Tip: Use the filters in the sidebar to customize the analysis") 
