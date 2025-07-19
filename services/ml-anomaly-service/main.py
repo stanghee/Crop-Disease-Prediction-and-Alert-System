@@ -62,19 +62,62 @@ class MLAnomalyService:
         self.streaming_queries = []
         
     def _create_spark_session(self):
-        """Create Spark session"""
-        return SparkSession.builder \
+        """Create Spark session - Connected to Spark Cluster"""
+        # Fixed: Python compatibility resolved, using cluster mode
+        spark_master_url = os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
+        driver_host = os.getenv("SPARK_DRIVER_HOST", "ml-anomaly-service")
+        driver_port = os.getenv("SPARK_DRIVER_PORT", "4041")
+        driver_memory = os.getenv("SPARK_DRIVER_MEMORY", "1g")
+        executor_memory = os.getenv("SPARK_EXECUTOR_MEMORY", "1g")
+        executor_cores = os.getenv("SPARK_EXECUTOR_CORES", "1")
+        
+        spark_builder = SparkSession.builder \
             .appName("MLAnomalyDetection") \
-            .config("spark.jars.packages", 
-                   "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,"
-                   "io.delta:delta-spark_2.12:3.0.0") \
+            .master(spark_master_url)
+        
+        # Add cluster-specific configurations only if using cluster
+        if spark_master_url.startswith("spark://"):
+            spark_builder = spark_builder \
+                .config("spark.driver.host", driver_host) \
+                .config("spark.driver.port", driver_port) \
+                .config("spark.driver.bindAddress", "0.0.0.0") \
+                .config("spark.cores.max", "2")
+        
+        # Configure Spark
+        jars = [
+            "/opt/spark/jars/hadoop-aws-3.3.4.jar",
+            "/opt/spark/jars/aws-java-sdk-bundle-1.12.367.jar",
+            "/opt/spark/jars/spark-sql-kafka-0-10_2.12-3.5.0.jar",
+            "/opt/spark/jars/kafka-clients-3.4.1.jar",
+            "/opt/spark/jars/spark-token-provider-kafka-0-10_2.12-3.5.0.jar",
+            "/opt/spark/jars/commons-pool2-2.11.1.jar",
+            "/opt/spark/jars/lz4-java-1.8.0.jar",
+            "/opt/spark/jars/zstd-jni-1.5.5-6.jar"
+        ]
+        
+        # Set dynamic class loading to true for Kafka 
+        return spark_builder \
+            .config("spark.driver.memory", driver_memory) \
+            .config("spark.executor.memory", executor_memory) \
+            .config("spark.executor.cores", executor_cores) \
             .config("spark.sql.adaptive.enabled", "true") \
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
+            .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
+            .config("spark.sql.streaming.forceDeleteTempCheckpointLocation", "true") \
+            .config("spark.sql.streaming.checkpointLocation.deleteOnStop", "true") \
+            .config("spark.network.timeout", "300s") \
+            .config("spark.executor.heartbeatInterval", "20s") \
+            .config("spark.pyspark.python", "/usr/local/bin/python3") \
+            .config("spark.pyspark.driver.python", "/usr/local/bin/python3") \
             .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000") \
             .config("spark.hadoop.fs.s3a.access.key", "minioadmin") \
             .config("spark.hadoop.fs.s3a.secret.key", "minioadmin") \
             .config("spark.hadoop.fs.s3a.path.style.access", "true") \
             .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+            .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \
+            .config("spark.driver.extraClassPath", ":".join(jars)) \
+            .config("spark.executor.extraClassPath", ":".join(jars)) \
+            .config("spark.jars", ",".join(jars)) \
             .config("spark.sql.streaming.checkpointLocation", "/tmp/ml-checkpoints") \
             .getOrCreate()
     
@@ -211,9 +254,14 @@ class MLAnomalyService:
     def _start_streaming(self):
         """Start streaming inference"""
         if self.predictor:
-            logger.info("Starting streaming inference")
-            self.streaming_queries = self.predictor.start_streaming()
-            logger.info(f"Started {len(self.streaming_queries)} streaming queries")
+            try:
+                logger.info("Starting streaming inference")
+                self.streaming_queries = self.predictor.start_streaming()
+                logger.info(f"Started {len(self.streaming_queries)} streaming queries")
+            except Exception as e:
+                logger.error(f"Failed to start streaming: {e}")
+                logger.warning("Service will continue without real-time streaming")
+                self.streaming_queries = []
     
     def _stop_streaming(self):
         """Stop streaming inference"""

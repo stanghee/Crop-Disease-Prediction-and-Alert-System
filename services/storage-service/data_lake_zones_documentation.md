@@ -2,7 +2,7 @@
 
 ## General Architecture
 
-The pipeline implements a **3-zone Data Lake structure** (Bronze, Silver, Gold) following the **Delta Lake** methodology to ensure ACID transactions, schema evolution, and time travel capabilities.
+The pipeline implements a **3-zone Data Lake structure** (Bronze, Silver, Gold) following the **Medallion Architecture** pattern to ensure progressive data quality improvement and optimized analytics performance.
 
 ```
 Kafka Topics → Bronze Zone → Silver Zone → Gold Zone → ML Service → Hybrid Storage

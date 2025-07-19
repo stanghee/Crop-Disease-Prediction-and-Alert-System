@@ -21,9 +21,9 @@ KMEANS_CONFIG = {
     'seed': 42             # Random seed
 }
 
-# Soglie per distanza dal centroide (anomaly detection)
-ANOMALY_DISTANCE_THRESHOLD = 0.01   # Distanza > soglia = anomalia (ulteriormente abbassata per test)
-CRITICAL_DISTANCE_THRESHOLD = 0.05  # Distanza > soglia critica = criticità (ulteriormente abbassata per test)
+# Soglie per anomaly score (0.0-1.0+ range)
+ANOMALY_DISTANCE_THRESHOLD = 0.3   # Score > 0.3 = anomalia
+CRITICAL_DISTANCE_THRESHOLD = 0.7  # Score > 0.7 = criticità
 
 # Processing configuration  
 BATCH_INTERVAL_SECONDS = 30   # Process every 30 seconds

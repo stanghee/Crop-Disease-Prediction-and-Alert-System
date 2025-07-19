@@ -45,9 +45,21 @@ class MainDataLakeService:
         self.is_running = True
         
     def _create_spark_session(self) -> SparkSession:
-        """Create Spark session with Delta Lake and S3 support"""
+        """Create Spark session with S3 and Kafka support - Connected to Spark Cluster"""
+        spark_master_url = os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
+        driver_host = os.getenv("SPARK_DRIVER_HOST", "spark-data-lake-service")
+        driver_port = os.getenv("SPARK_DRIVER_PORT", "4040")
+        
         return SparkSession.builder \
             .appName("CropDiseaseDataLake") \
+            .master(spark_master_url) \
+            .config("spark.driver.host", driver_host) \
+            .config("spark.driver.port", driver_port) \
+            .config("spark.driver.bindAddress", "0.0.0.0") \
+            .config("spark.driver.memory", "1g") \
+            .config("spark.executor.memory", "1g") \
+            .config("spark.executor.cores", "1") \
+            .config("spark.cores.max", os.getenv("SPARK_CORES_MAX", "2")) \
             .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
             .config("spark.sql.adaptive.enabled", "true") \
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
@@ -58,11 +70,9 @@ class MainDataLakeService:
             .config("spark.hadoop.fs.s3a.path.style.access", "true") \
             .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
             .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \
-            .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-            .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
             .config("spark.sql.streaming.checkpointLocation", "/tmp/spark-checkpoints") \
             .config("spark.sql.warehouse.dir", "s3a://gold/warehouse/") \
-            .config("spark.jars", "/opt/spark/jars/delta-spark_2.12-3.0.0.jar,/opt/spark/jars/delta-storage-3.0.0.jar,/opt/spark/jars/hadoop-aws-3.3.4.jar,/opt/spark/jars/aws-java-sdk-bundle-1.12.367.jar,/opt/spark/jars/spark-sql-kafka-0-10_2.12-3.5.0.jar,/opt/spark/jars/kafka-clients-3.4.1.jar,/opt/spark/jars/spark-token-provider-kafka-0-10_2.12-3.5.0.jar,/opt/spark/jars/commons-pool2-2.11.1.jar") \
+            .config("spark.jars", "/opt/spark/jars/hadoop-aws-3.3.4.jar,/opt/spark/jars/aws-java-sdk-bundle-1.12.367.jar,/opt/spark/jars/spark-sql-kafka-0-10_2.12-3.5.0.jar,/opt/spark/jars/kafka-clients-3.4.1.jar,/opt/spark/jars/spark-token-provider-kafka-0-10_2.12-3.5.0.jar,/opt/spark/jars/commons-pool2-2.11.1.jar") \
             .getOrCreate()
     
     def _create_minio_client(self) -> Minio:

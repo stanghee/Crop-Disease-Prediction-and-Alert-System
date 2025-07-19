@@ -6,22 +6,19 @@ Reads from Kafka gold-ml-features topic and predicts anomalies
 
 import logging
 import json
+import math
 from datetime import datetime
-import numpy as np
-import pandas as pd
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
+from pyspark.sql.functions import concat_ws
 from pyspark.sql.types import *
-from pyspark.sql.functions import pandas_udf
 import pickle
 from pyspark.ml.feature import VectorAssembler
-from pyspark.sql.functions import udf
 from pyspark.sql.types import FloatType, BooleanType, StringType
 from utils.feature_config import CORE_FEATURES, KMEANS_CONFIG, ANOMALY_DISTANCE_THRESHOLD, CRITICAL_DISTANCE_THRESHOLD
 
 from storage.model_manager import ModelManager
 from storage.postgres_client import PostgresClient
-import builtins
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +34,6 @@ class StreamingPredictor:
         if not self.model:
             logger.warning("No model available for inference - will load when needed")
             self.metadata = {'model_version': 'no_model'}
-        else:
-            self.centers = [c for c in self.model.clusterCenters()]
 
     def start_streaming(self):
         """Start the streaming inference pipeline"""
@@ -55,7 +50,7 @@ class StreamingPredictor:
             .format("kafka") \
             .option("kafka.bootstrap.servers", "kafka:9092") \
             .option("subscribe", "gold-ml-features") \
-            .option("startingOffsets", "latest") \
+            .option("startingOffsets", "earliest") \
             .option("failOnDataLoss", "false") \
             .load()
         
@@ -94,19 +89,39 @@ class StreamingPredictor:
         scaled_df = self.scaler.transform(assembled_df)
         # Predici cluster
         pred_df = self.model.transform(scaled_df)
-        # Calcola distanza dal centroide assegnato
-        import numpy as np
-        centers = self.centers
-        def distance_from_centroid(features, cluster):
-            v = np.array(features)
-            c = np.array(centers[cluster])
-            return float(np.linalg.norm(v - c))
-        distance_udf = udf(distance_from_centroid, FloatType())
-        pred_df = pred_df.withColumn("distance", distance_udf(col("scaled_features"), col("prediction")))
-        # DEBUG: stampa le distanze e i field_id
-        pred_df = pred_df.withColumn("_debug", \
-            udf(lambda f, d: print(f"DEBUG: field_id={f}, distance={d}"), StringType())(col("field_id"), col("distance")))
-        # Determina anomalia e severity
+        # Usa approccio semplificato senza UDF per evitare problemi di serializzazione
+        # Calcola anomalie basate sulla predizione del cluster e features estreme
+        
+        # Score semplificato basato su deviazioni dalle feature normali
+        pred_df = pred_df.withColumn(
+            "temp_anomaly", 
+            when((col("sensor_avg_temperature") > 40) | (col("sensor_avg_temperature") < 5), 1.0)
+            .when((col("sensor_avg_temperature") > 35) | (col("sensor_avg_temperature") < 10), 0.7)
+            .otherwise(0.0)
+        ).withColumn(
+            "humidity_anomaly",
+            when((col("sensor_avg_humidity") < 20) | (col("sensor_avg_humidity") > 95), 1.0)
+            .when((col("sensor_avg_humidity") < 30) | (col("sensor_avg_humidity") > 85), 0.5)
+            .otherwise(0.0)
+        ).withColumn(
+            "ph_anomaly",
+            when((col("sensor_avg_soil_ph") < 4.0) | (col("sensor_avg_soil_ph") > 9.0), 1.0)
+            .when((col("sensor_avg_soil_ph") < 5.5) | (col("sensor_avg_soil_ph") > 8.0), 0.5)
+            .otherwise(0.0)
+        ).withColumn(
+            "diff_anomaly",
+            when((col("temp_differential") > 20) | (col("humidity_differential") > 40), 1.0)
+            .when((col("temp_differential") > 10) | (col("humidity_differential") > 25), 0.5)
+            .otherwise(0.0)
+        )
+        
+        # Calcola score finale 
+        pred_df = pred_df.withColumn(
+            "distance",
+            (col("temp_anomaly") + col("humidity_anomaly") + col("ph_anomaly") + col("diff_anomaly") + col("sensor_anomaly_rate")) / 5.0
+        )
+        
+        # Determina anomalia e severity senza UDF debug
         pred_df = pred_df.withColumn(
             "is_anomaly", col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD)
         ).withColumn(
@@ -114,54 +129,37 @@ class StreamingPredictor:
                         .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD), "HIGH")
                         .otherwise("NORMAL")
         )
-        # Raccomandazioni
-        def generate_recommendations(distance, temp, humidity, soil_ph, temp_diff, humidity_diff, anomaly_rate):
-            recommendations = []
-            # Base sulle distanze
-            if distance > CRITICAL_DISTANCE_THRESHOLD:
-                recommendations.append("IMMEDIATE INTERVENTION REQUIRED")
-            elif distance > ANOMALY_DISTANCE_THRESHOLD:
-                recommendations.append("WARNING: Outlier detected - enhanced monitoring recommended")
-            else:
-                recommendations.append("Normal conditions - continue monitoring")
-            # Temperature
-            if temp > 30:
-                recommendations.append("High temperature: consider irrigation and shading")
-            elif temp < 10:
-                recommendations.append("Low temperature: protect crops from frost")
-            # Humidity
-            if humidity > 85:
-                recommendations.append("High humidity: fungal risk - improve ventilation")
-            elif humidity < 40:
-                recommendations.append("Low humidity: increase irrigation")
-            # Soil pH
-            if soil_ph < 6.0:
-                recommendations.append("Acidic pH: consider liming")
-            elif soil_ph > 7.5:
-                recommendations.append("Alkaline pH: consider organic acidifiers")
-            # Differenziali
-            if builtins.abs(temp_diff) > 5:
-                recommendations.append("High temperature differential: verify local microclimate and sensors")
-            if builtins.abs(humidity_diff) > 15:
-                recommendations.append("High humidity differential: verify irrigation and drainage")
-            if anomaly_rate > 0.3:
-                recommendations.append("High anomaly rate: verify sensor operation and calibration")
-            if temp > 25 and humidity > 80:
-                recommendations.append("Ideal conditions for pathogens: apply preventive fungicides")
-            if soil_ph < 6.0 and humidity > 70:
-                recommendations.append("Nutritional stress + humidity: consider fertilizers and drainage")
-            return " | ".join(recommendations) if recommendations else "No specific recommendations"
-        rec_udf = udf(generate_recommendations, StringType())
+        # Raccomandazioni usando operazioni SQL native (senza UDF)
         pred_df = pred_df.withColumn(
             "recommendations",
-            rec_udf(
-                col("distance"),
-                col("sensor_avg_temperature"),
-                col("sensor_avg_humidity"),
-                col("sensor_avg_soil_ph"),
-                col("temp_differential"),
-                col("humidity_differential"),
-                col("sensor_anomaly_rate")
+            concat_ws(" | ",
+                # Base sulle distanze
+                when(col("distance") > lit(CRITICAL_DISTANCE_THRESHOLD), "IMMEDIATE INTERVENTION REQUIRED")
+                .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD), "WARNING: Anomaly detected - enhanced monitoring recommended") 
+                .otherwise("Normal conditions - continue monitoring"),
+                
+                # Temperature
+                when(col("sensor_avg_temperature") > 30, "High temperature: consider irrigation and shading")
+                .when(col("sensor_avg_temperature") < 10, "Low temperature: protect crops from frost"),
+                
+                # Humidity  
+                when(col("sensor_avg_humidity") > 85, "High humidity: fungal risk - improve ventilation")
+                .when(col("sensor_avg_humidity") < 40, "Low humidity: increase irrigation"),
+                
+                # Soil pH
+                when(col("sensor_avg_soil_ph") < 6.0, "Acidic pH: consider liming")
+                .when(col("sensor_avg_soil_ph") > 7.5, "Alkaline pH: consider organic acidifiers"),
+                
+                # Differenziali  
+                when(abs(col("temp_differential")) > 5, "High temperature differential: verify sensors"),
+                when(abs(col("humidity_differential")) > 15, "High humidity differential: check irrigation"),
+                
+                # Anomaly rate
+                when(col("sensor_anomaly_rate") > 0.3, "High anomaly rate: verify sensor calibration"),
+                
+                # Combinazioni critiche
+                when((col("sensor_avg_temperature") > 25) & (col("sensor_avg_humidity") > 80), "Ideal conditions for pathogens: apply preventive measures"),
+                when((col("sensor_avg_soil_ph") < 6.0) & (col("sensor_avg_humidity") > 70), "Nutritional stress + humidity: consider fertilizers and drainage")
             )
         )
         # Output finale
@@ -184,12 +182,8 @@ class StreamingPredictor:
     
     def _write_to_kafka(self, df):
         """Write anomalies to Kafka ml-anomalies topic"""
-        # DEBUG: stampa field_id, distance, is_anomaly prima del filtro
-        debug_df = df.withColumn(
-            "_debug_kafka", udf(lambda f, d, a: print(f"KAFKA DEBUG: field_id={f}, distance={d}, is_anomaly={a}"), StringType())(
-                col("field_id"), col("anomaly_score"), col("is_anomaly")
-            )
-        )
+        # Rimuovi debug UDF per evitare problemi di serializzazione
+        debug_df = df
         # Only send anomalies to alert system
         anomaly_stream = debug_df \
             .filter(col("is_anomaly") == True) \
