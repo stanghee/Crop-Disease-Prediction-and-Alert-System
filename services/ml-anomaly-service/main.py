@@ -152,6 +152,7 @@ class MLAnomalyService:
                 "timestamp": datetime.now().isoformat()
             }
         
+        # TODO: check if this is needed
         @self.app.post("/train")
         async def trigger_training(background_tasks: BackgroundTasks, days: int = 30):
             """Manually trigger model training"""

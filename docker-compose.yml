@@ -105,10 +105,7 @@ services:
       retries: 3
 
   spark-worker-1:
-    build:
-      context: .
-      dockerfile: spark-worker.Dockerfile
-    image: spark-worker-ml:3.5.0
+    image: apache/spark:3.5.0-python3
     container_name: spark-worker-1
     hostname: spark-worker-1
     depends_on:
@@ -131,10 +128,7 @@ services:
     mem_reservation: 2g
 
   spark-worker-2:
-    build:
-      context: .
-      dockerfile: spark-worker.Dockerfile
-    image: spark-worker-ml:3.5.0
+    image: apache/spark:3.5.0-python3
     container_name: spark-worker-2
     hostname: spark-worker-2
     depends_on:

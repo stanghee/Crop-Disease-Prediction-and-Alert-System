@@ -21,6 +21,7 @@ KMEANS_CONFIG = {
     'seed': 42             # Random seed
 }
 
+# TODO: force this to be in a lower range (just for the exam demo)
 # Soglie per anomaly score (0.0-1.0+ range)
 ANOMALY_DISTANCE_THRESHOLD = 0.3   # Score > 0.3 = anomalia
 CRITICAL_DISTANCE_THRESHOLD = 0.7  # Score > 0.7 = criticità

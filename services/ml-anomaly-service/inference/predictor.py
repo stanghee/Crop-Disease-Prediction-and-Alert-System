@@ -81,7 +81,7 @@ class StreamingPredictor:
             logger.warning("No model or scaler available for inference")
             return df.withColumn("anomaly_score", lit(0.0)) \
                      .withColumn("is_anomaly", lit(False)) \
-                     .withColumn("severity", lit("NO_MODEL")) \
+                     .withColumn("severity", lit("LOW")) \
                      .withColumn("recommendations", lit("Model not available - check training status"))
         # Assembla e scala le feature
         assembler = VectorAssembler(inputCols=CORE_FEATURES, outputCol="features_vec")
@@ -127,7 +127,8 @@ class StreamingPredictor:
         ).withColumn(
             "severity", when(col("distance") > lit(CRITICAL_DISTANCE_THRESHOLD), "CRITICAL")
                         .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD), "HIGH")
-                        .otherwise("NORMAL")
+                        .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD * 0.5), "MEDIUM")
+                        .otherwise("LOW")
         )
         # Raccomandazioni usando operazioni SQL native (senza UDF)
         pred_df = pred_df.withColumn(
@@ -136,7 +137,8 @@ class StreamingPredictor:
                 # Base sulle distanze
                 when(col("distance") > lit(CRITICAL_DISTANCE_THRESHOLD), "IMMEDIATE INTERVENTION REQUIRED")
                 .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD), "WARNING: Anomaly detected - enhanced monitoring recommended") 
-                .otherwise("Normal conditions - continue monitoring"),
+                .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD * 0.5), "MEDIUM risk detected - increase monitoring frequency")
+                .otherwise("LOW risk - continue routine monitoring"),
                 
                 # Temperature
                 when(col("sensor_avg_temperature") > 30, "High temperature: consider irrigation and shading")
