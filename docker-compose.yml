@@ -79,6 +79,77 @@ services:
     mem_limit: 1g
     mem_reservation: 512m
 
+  # Spark Cluster
+  spark-master:
+    image: apache/spark:3.5.0-python3
+    container_name: spark-master
+    hostname: spark-master
+    ports:
+      - "7077:7077"  # Spark Master port
+      - "8080:8080"  # Spark Master UI
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master", "--port", "7077", "--webui-port", "8080"]
+    volumes:
+      - spark_shared_data:/opt/spark/shared-data
+    restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 512m
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  spark-worker-1:
+    image: apache/spark:3.5.0-python3
+    container_name: spark-worker-1
+    hostname: spark-worker-1
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    ports:
+      - "8081:8081"  # Worker 1 UI
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+      - SPARK_WORKER_PORT=7078
+      - SPARK_WORKER_WEBUI_PORT=8081
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077", "--cores", "2", "--memory", "2g", "--webui-port", "8081"]
+    volumes:
+      - spark_shared_data:/opt/spark/shared-data
+    restart: unless-stopped
+    mem_limit: 3g
+    mem_reservation: 2g
+
+  spark-worker-2:
+    image: apache/spark:3.5.0-python3
+    container_name: spark-worker-2
+    hostname: spark-worker-2
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    ports:
+      - "8082:8082"  # Worker 2 UI
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+      - SPARK_WORKER_PORT=7079
+      - SPARK_WORKER_WEBUI_PORT=8082
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077", "--cores", "2", "--memory", "2g", "--webui-port", "8082"]
+    volumes:
+      - spark_shared_data:/opt/spark/shared-data
+    restart: unless-stopped
+    mem_limit: 3g
+    mem_reservation: 2g
+
 
   weather-producer:
     build: ./services/weather-service/producer
@@ -154,12 +225,19 @@ services:
     volumes:
       - ./services/storage-service:/app
       - spark_checkpoints:/app/spark-checkpoints
+      - spark_shared_data:/opt/spark/shared-data
     working_dir: /app
     depends_on:
       kafka:
         condition: service_healthy
       minio:
         condition: service_healthy
+      spark-master:
+        condition: service_healthy
+      spark-worker-1:
+        condition: service_started
+      spark-worker-2:
+        condition: service_started
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       MINIO_ENDPOINT: minio:9000
@@ -167,6 +245,11 @@ services:
       MINIO_SECRET_KEY: minioadmin
       TIMEZONE: Europe/Rome
       SPARK_PARALLELISM: 4
+      # Spark Cluster Configuration
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_DRIVER_HOST: spark-data-lake-service
+      SPARK_DRIVER_PORT: 4040
+      SPARK_CORES_MAX: 2
       # Data lake paths (override default s3a URIs used in code)
       BRONZE_PATH: s3a://bronze/
       SILVER_PATH: s3a://silver/
@@ -174,8 +257,8 @@ services:
       - "4040:4040"  # Spark UI
     command: ["python", "main_service.py"]
     restart: unless-stopped
-    mem_limit: 3g
-    mem_reservation: 2g
+    mem_limit: 2g
+    mem_reservation: 1g
 
   crop-disease-service:
     build: ./services/crop-disease-service
@@ -255,10 +338,13 @@ services:
 
   ml-anomaly-service:
     build: ./services/ml-anomaly-service
+    container_name: ml-anomaly-service
+    hostname: ml-anomaly-service
     volumes:
       - ./services/ml-anomaly-service:/app
       - ml_models:/app/models
       - ml_checkpoints:/tmp/ml-checkpoints
+      - spark_shared_data:/opt/spark/shared-data
     working_dir: /app
     depends_on:
       kafka:
@@ -267,6 +353,12 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      spark-master:
+        condition: service_healthy
+      spark-worker-1:
+        condition: service_started
+      spark-worker-2:
+        condition: service_started
       spark-data-lake-service:
         condition: service_started
     environment:
@@ -289,19 +381,27 @@ services:
       # Kafka Configuration
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       
-      # Spark Configuration
-      SPARK_DRIVER_MEMORY: 2g
-      SPARK_EXECUTOR_MEMORY: 2g
+      # Spark Cluster Configuration - Workers now have ML dependencies
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_DRIVER_HOST: ml-anomaly-service
+      SPARK_DRIVER_PORT: 4041
+      SPARK_DRIVER_MEMORY: 1g
+      SPARK_EXECUTOR_MEMORY: 1g
+      SPARK_EXECUTOR_CORES: 1
+      
+      # Python compatibility - Use Python with installed packages
+      PYSPARK_PYTHON: /usr/local/bin/python3
+      PYSPARK_DRIVER_PYTHON: /usr/local/bin/python3
       
       # Timezone
       TIMEZONE: Europe/Rome
       
     ports:
       - "8002:8002"  # ML Service API
-      - "4041:4040"  # Spark UI (different port to avoid conflict)
+      - "4041:4041"  # Spark UI (different port to avoid conflict)
     restart: unless-stopped
-    mem_limit: 3g
-    mem_reservation: 2g
+    mem_limit: 2g
+    mem_reservation: 1g
 
 volumes:
   minio_data:
@@ -310,3 +410,4 @@ volumes:
   ml_models:
   ml_logs:
   ml_checkpoints:
+  spark_shared_data:

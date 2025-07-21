@@ -74,7 +74,23 @@ class ModelManager:
             metadata_path = f"models/kmeans/{version}_metadata.json"
             if spark is None:
                 from pyspark.sql import SparkSession
-                spark = SparkSession.builder.getOrCreate()
+                import os
+                # Use cluster configuration if available
+                spark_master_url = os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
+                if spark_master_url.startswith("spark://"):
+                    # Connect to Spark cluster
+                    driver_host = os.getenv("SPARK_DRIVER_HOST", "ml-anomaly-service")
+                    driver_port = "4041"  # Different port to avoid conflicts
+                    spark = SparkSession.builder \
+                        .appName("ModelManager") \
+                        .master(spark_master_url) \
+                        .config("spark.driver.host", driver_host) \
+                        .config("spark.driver.port", driver_port) \
+                        .config("spark.driver.bindAddress", "0.0.0.0") \
+                        .getOrCreate()
+                else:
+                    # Fallback to local mode
+                    spark = SparkSession.builder.getOrCreate()
             model = KMeansModel.load(model_path)
             scaler_model = StandardScalerModel.load(scaler_path)
             # Load metadata
