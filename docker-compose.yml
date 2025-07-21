@@ -249,6 +249,9 @@ services:
       SPARK_MASTER_URL: spark://spark-master:7077
       SPARK_DRIVER_HOST: spark-data-lake-service
       SPARK_DRIVER_PORT: 4040
+      SPARK_DRIVER_MEMORY: 1g
+      SPARK_EXECUTOR_MEMORY: 1g
+      SPARK_EXECUTOR_CORES: 2
       SPARK_CORES_MAX: 2
       # Data lake paths (override default s3a URIs used in code)
       BRONZE_PATH: s3a://bronze/
@@ -264,14 +267,20 @@ services:
     build: ./services/crop-disease-service
     volumes:
       - ./services/crop-disease-service:/app
-      - ml_models:/app/models
-      - ml_logs:/app/logs
+      - alert_logs:/app/logs
+      - spark_shared_data:/opt/spark/shared-data
     working_dir: /app
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
+      spark-master:
+        condition: service_healthy
+      spark-worker-1:
+        condition: service_started
+      spark-worker-2:
+        condition: service_started
       spark-data-lake-service:
         condition: service_started
     environment:
@@ -291,20 +300,30 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       
-      # Data Lake Paths
+      # Spark Cluster Configuration
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_DRIVER_HOST: crop-disease-service
+      SPARK_DRIVER_PORT: 4042
+      SPARK_DRIVER_MEMORY: 512m
+      SPARK_EXECUTOR_MEMORY: 512m
+      SPARK_EXECUTOR_CORES: 1
+      SPARK_CORES_MAX: 1
+      
+      # Kafka Configuration
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      
+      # Data Lake Paths (for reference only - not used by alert service)
       GOLD_PATH: s3a://gold/
-      ML_PATH: s3a://ml-models/
       
       # Timezone
       TIMEZONE: Europe/Rome
       
-      # ML Model Configuration
-      BATCH_INTERVAL_HOURS: 6
-      BATCH_START_HOUR: 0
+      # Alert Processing Configuration
+      ALERT_CHECKPOINT_LOCATION: /tmp/alerts-checkpoints
       
     ports:
-      - "8000:8000"  # ML Service API
-      - "8001:8001"  # ML Service Admin
+      - "8000:8000"  # Alert Service API
+      - "4042:4042"  # Spark UI for Alert Service
     restart: unless-stopped
     mem_limit: 2g
     mem_reservation: 1g
@@ -385,9 +404,10 @@ services:
       SPARK_MASTER_URL: spark://spark-master:7077
       SPARK_DRIVER_HOST: ml-anomaly-service
       SPARK_DRIVER_PORT: 4041
-      SPARK_DRIVER_MEMORY: 1g
-      SPARK_EXECUTOR_MEMORY: 1g
+      SPARK_DRIVER_MEMORY: 512m
+      SPARK_EXECUTOR_MEMORY: 512m
       SPARK_EXECUTOR_CORES: 1
+      SPARK_CORES_MAX: 1
       
       # Python compatibility - Use Python with installed packages
       PYSPARK_PYTHON: /usr/local/bin/python3
@@ -410,4 +430,5 @@ volumes:
   ml_models:
   ml_logs:
   ml_checkpoints:
+  alert_logs:
   spark_shared_data:

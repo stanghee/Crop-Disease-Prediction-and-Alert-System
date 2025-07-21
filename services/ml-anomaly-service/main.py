@@ -70,6 +70,7 @@ class MLAnomalyService:
         driver_memory = os.getenv("SPARK_DRIVER_MEMORY", "1g")
         executor_memory = os.getenv("SPARK_EXECUTOR_MEMORY", "1g")
         executor_cores = os.getenv("SPARK_EXECUTOR_CORES", "1")
+        cores_max = os.getenv("SPARK_CORES_MAX", "1")
         
         spark_builder = SparkSession.builder \
             .appName("MLAnomalyDetection") \
@@ -81,7 +82,7 @@ class MLAnomalyService:
                 .config("spark.driver.host", driver_host) \
                 .config("spark.driver.port", driver_port) \
                 .config("spark.driver.bindAddress", "0.0.0.0") \
-                .config("spark.cores.max", "2")
+                .config("spark.cores.max", cores_max)
         
         # Configure Spark
         jars = [
