@@ -28,8 +28,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p /app/logs /tmp/alerts-checkpoints
+# RIMOSSO: creazione della cartella /app/logs perché non serve più
+# RUN mkdir -p /app/logs /tmp/alerts-checkpoints
+RUN mkdir -p /tmp/alerts-checkpoints
 
 # Set environment variables
 ENV PYTHONPATH=/app
