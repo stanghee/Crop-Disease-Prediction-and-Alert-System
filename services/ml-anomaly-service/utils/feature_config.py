@@ -11,8 +11,8 @@ CORE_FEATURES = [
     'sensor_avg_soil_ph',
     'temp_differential',      # sensor vs weather temperature difference
     'humidity_differential',  # sensor vs weather humidity difference
-    'sensor_anomaly_rate'     # existing anomaly rate from data quality
-]
+    'sensor_anomaly_rate'     # existing anomaly rate from data quality 
+] #TODO: remove sensor anomaly rate from core features
 
 # Model configuration for KMeans
 KMEANS_CONFIG = {
@@ -23,8 +23,8 @@ KMEANS_CONFIG = {
 
 # TODO: force this to be in a lower range (just for the exam demo)
 # Soglie per anomaly score (0.0-1.0+ range)
-ANOMALY_DISTANCE_THRESHOLD = 0.3   # Score > 0.3 = anomalia
-CRITICAL_DISTANCE_THRESHOLD = 0.7  # Score > 0.7 = criticità
+ANOMALY_DISTANCE_THRESHOLD = 0.05   # Score > 0.05 = anomalia
+CRITICAL_DISTANCE_THRESHOLD = 0.5  # Score > 0.5 = criticità
 
 # Processing configuration  
 BATCH_INTERVAL_SECONDS = 30   # Process every 30 seconds

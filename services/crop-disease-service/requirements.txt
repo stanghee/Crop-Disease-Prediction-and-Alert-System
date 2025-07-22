@@ -13,4 +13,7 @@ pytz==2023.3
 # API and Web Framework
 fastapi==0.104.1
 uvicorn==0.24.0
-pydantic==2.5.0 
+pydantic==2.5.0
+
+# Kafka client
+kafka-python==2.0.2 

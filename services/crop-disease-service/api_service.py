@@ -111,49 +111,6 @@ class APIService:
                 logger.error(f"Error getting alert statistics: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
         
-        @self.router.get("/alerts/configuration")
-        async def get_alert_configuration():
-            """Get alert configuration information"""
-            try:
-                # Import here to avoid circular imports
-                import sys
-                sys.path.append('Threshold-alert')
-                from config.alert_thresholds import AlertConfiguration
-                
-                config = AlertConfiguration()
-                config_info = {
-                    "sensor_thresholds": [
-                        {
-                            "condition": rule.condition,
-                            "operator": rule.operator,
-                            "value": rule.value,
-                            "risk_level": rule.risk_level.name,
-                            "message_template": rule.message_template
-                        }
-                        for rule in config.get_sensor_thresholds()
-                    ],
-                    "weather_thresholds": [
-                        {
-                            "condition": rule.condition,
-                            "operator": rule.operator,
-                            "value": rule.value,
-                            "risk_level": rule.risk_level.name,
-                            "message_template": rule.message_template
-                        }
-                        for rule in config.get_weather_thresholds()
-                    ],
-                    "processing_mode": "spark_streaming",
-                    "real_time_processing": True
-                }
-                
-                return {
-                    "status": "success",
-                    "data": config_info,
-                    "timestamp": datetime.now().isoformat()
-                }
-            except Exception as e:
-                logger.error(f"Error getting alert configuration: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
         
         @self.router.post("/alerts/cleanup")
         async def cleanup_old_alerts(days_old: int = 30):
