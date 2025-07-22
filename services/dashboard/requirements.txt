@@ -21,8 +21,8 @@ pytz==2023.3
 httpx==0.25.0
 pydantic==2.5.0
 
-# Kafka integration
-kafka-python==2.0.2
+# Redis for cache access
+redis==5.0.1
 
 # Utilities
 python-dotenv==1.0.0
