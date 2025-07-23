@@ -1,14 +1,14 @@
-# 3-Zone Data Lake Pipeline for Agricultural Monitoring
+# 3-Zone Medallion Data Lake for Agricultural Monitoring
 
-## General Architecture
+## Overview
 
 The pipeline implements a **3-zone Data Lake structure** (Bronze, Silver, Gold) following the **Medallion Architecture** pattern to ensure progressive data quality improvement and optimized analytics performance.
 
 ```
-Kafka Topics → Bronze Zone → Silver Zone → Gold Zone → ML Service → Hybrid Storage
-     ↓              ↓             ↓            ↓           ↓
-Raw Data    Immutable Raw   Validated &   Dashboard KPIs  ML Predictions
-            + Metadata      Cleaned                       & Alerts
+Kafka Topics → Bronze Zone → Silver Zone → Gold Zone 
+     ↓              ↓             ↓            ↓           
+Raw Data    Immutable Raw   Validated &   ML Features  
+            + Metadata      Cleaned                       
 ```
 
 ## Zone Structure
@@ -16,11 +16,14 @@ Raw Data    Immutable Raw   Validated &   Dashboard KPIs  ML Predictions
 ### 🥉 BRONZE ZONE (Raw Data Lake)
 **Principle**: Immutable data as close as possible to the original form
 
+
 ### 🥈 SILVER ZONE (Curated Data Lake) 
 **Principle**: Validated, cleaned data with consistent schema
 
-### 🥇 GOLD ZONE (Business-Ready Data Lake)
+
+### 🥇 GOLD ZONE (ML-Ready Data Lake)
 **Principle**: Aggregated KPIs for dashboard
+
 
 ---
 
@@ -53,10 +56,10 @@ Raw Data    Immutable Raw   Validated &   Dashboard KPIs  ML Predictions
 **Schema**:
 ```python
 StructType([
-    StructField("timestamp", StringType(), True),           # Original timestamp
-    StructField("field_id", StringType(), True),           # Field identifier
-    StructField("temperature", DoubleType(), True),        # Temperature in °C
-    StructField("humidity", DoubleType(), True),           # Humidity %
+    StructField("timestamp", StringType(), True),         # Original timestamp
+    StructField("field_id", StringType(), True),          # Field identifier
+    StructField("temperature", DoubleType(), True),       # Temperature in °C
+    StructField("humidity", DoubleType(), True),          # Humidity %
     StructField("soil_ph", DoubleType(), True),           # Soil pH
     StructField("kafka_topic", StringType(), True),       # Kafka topic
     StructField("kafka_partition", LongType(), True),     # Kafka partition
@@ -75,6 +78,7 @@ StructType([
 - ✅ Value range validation (temp: -20°C to 60°C, humidity: 0-100%, pH: 3-9)
 - ✅ Timestamp parsing with timezone handling
 - ✅ Addition of derived columns (date, hour, day_of_week, month, year)
+  - Usefull information implemented for a possible Machine Learning in the field of timeseries 
 - ✅ Data validity flags (temperature_valid, humidity_valid, ph_valid)
 - ✅ Removal of records with critical null values
 
@@ -95,53 +99,9 @@ StructField("humidity_valid", BooleanType(), True),
 StructField("ph_valid", BooleanType(), True)
 ```
 
-### 🥇 GOLD ZONE - IoT Sensors
+### 🥇 GOLD ZONE - Satellite
 
-**Gold Transformations**:
-
-#### ML Features with Sliding Window (`s3a://gold/ml_features/`)
-**10-minute sliding window aggregations per field**:
-```python
-# Sensor aggregations (10-minute window)
-- sensor_avg_temperature, sensor_std_temperature, sensor_min_temperature, sensor_max_temperature, sensor_temp_range
-- sensor_avg_humidity, sensor_std_humidity, sensor_min_humidity, sensor_max_humidity, sensor_humidity_range
-- sensor_avg_soil_ph, sensor_std_soil_ph, sensor_min_soil_ph, sensor_max_soil_ph, sensor_ph_range
-- sensor_temp_valid_rate, sensor_humidity_valid_rate, sensor_ph_valid_rate
-- sensor_readings_count, sensor_anomaly_count, sensor_anomaly_rate, sensor_data_quality_score
-
-# Weather aggregations (10-minute window)
-- weather_avg_temperature, weather_std_temperature, weather_min_temperature, weather_max_temperature, weather_temp_range
-- weather_avg_humidity, weather_std_humidity, weather_min_humidity, weather_max_humidity, weather_humidity_range
-- weather_avg_wind_speed, weather_std_wind_speed, weather_min_wind_speed, weather_max_wind_speed, weather_wind_range
-- weather_avg_uv_index, weather_std_uv_index, weather_min_uv_index, weather_max_uv_index, weather_uv_range
-- weather_dominant_condition, weather_readings_count
-
-# Derived features
-- temp_differential, humidity_differential
-- environmental_stress_score (HIGH/MEDIUM/LOW)
-- combined_risk_score (HIGH/MEDIUM/LOW)
-- sensor_data_freshness_minutes, weather_data_freshness_minutes
-
-# Processing metadata
-- processing_timestamp, window_start_time, window_end_time, window_duration_minutes
-```
-
-**Caratteristiche**:
-- **Finestra scorrevole**: 10 minuti di dati aggregati
-- **Join location-based**: Sensor e weather data uniti per location
-- **3 record per file**: Uno per ogni field (field_01, field_02, field_03)
-- **Timestamp nel nome**: `ml_features_YYYY-MM-DD_HH-MM`
-- **Formato**: Parquet compresso con Snappy
-- **Overwrite mode**: Ogni esecuzione sovrascrive il file precedente
-
-**Storage Format**: Parquet (compressed with Snappy)
-**Path**: `s3a://gold/ml_features/ml_features_{timestamp}`
-**Partitioning**: Nessuna (file singolo con timestamp nel nome)
-
-**Availability**:
-- **ML Service**: Lettura diretta dei file ML features per predizioni
-- **Dashboard**: Query sui file ML features per visualizzazioni
-- **Monitoring**: Real-time risk assessment e data quality metrics
+- Check point 4
 
 ---
 
@@ -195,8 +155,7 @@ StructField("ph_valid", BooleanType(), True)
 
 ### 🥇 GOLD ZONE - Weather
 
-**Note**: Weather data Gold zone processing is not currently implemented in the GoldZoneProcessor.
-Weather data is processed through Bronze and Silver zones only.
+- Check point 4 
 
 ---
 
@@ -256,31 +215,43 @@ Weather data is processed through Bronze and Silver zones only.
 ### 🥇 GOLD ZONE - Satellite
 
 **Note**: Satellite data Gold zone processing is not currently implemented in the GoldZoneProcessor.
-Satellite data is processed through Bronze and Silver zones only.
+Satellite data is processed through Bronze and Silver zones only. Tt present, we have preferred not to use the images even through machine learning models due to the low quality and poor time availability determined by the free service offered by Copernicus.
+
+---
+## 4. 🥇 GOLD ZONE - ML ready
+
+**Key Transformations (see `gold_zone_processor.py`):**
+- Sliding window aggregations (typically 10-minute windows) to compute temporal statistics on sensor and weather data.
+- Join operations between sensor and weather datasets on location and time window, providing a unified view of environmental conditions.
+- Advanced feature engineering for ML, including:
+  - Calculation of means, variances, min/max, trends, and other statistics for temperature, humidity, pH, etc.
+  - Anomaly and data quality indicators.
+  - Derived features tailored for predictive models and classifiers.
+- Output written as compressed Parquet files (Snappy), with one file per processed time window.
+
+**Format:** Parquet (Snappy compression)  
+**Path:** `s3a://gold/ml_feature/`  
+**Partitioning:** By time window (e.g., every 10 minutes, with timestamp in the filename)
 
 ---
 
-## 4. PIPELINE PROCESSING
+## 5. PIPELINE PROCESSING
 
 ### Streaming Processing (Bronze Zone)
 - **Frequency**: Real-time (30 seconds micro-batches)
 - **Technology**: Spark Structured Streaming
-- **Checkpointing**: Fault-tolerance with automatic recovery
+
 
 ### Streaming Processing (Silver Zone)
 - **Frequency**: Real-time (1 minute micro-batches)
 - **Technology**: Spark Structured Streaming
-- **Checkpointing**: Fault-tolerance with automatic recovery
+
 
 ### Batch Processing (Gold Zone)  
-- **Frequency**: Every 5 minutes
+- **Frequency**: Every 10 minutes
 - **Technology**: Spark Batch Jobs
-- **Orchestration**: Internal scheduling with retry logic
 
-### Schema Evolution
-- **Bronze**: Flexible schema (JSON)
-- **Silver**: Validated schema with evolution support
-- **Gold**: Optimized schema for query performance
+
 
 
 

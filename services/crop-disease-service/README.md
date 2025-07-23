@@ -6,11 +6,10 @@ The **Real-Time Alert Service** is a Spark Streaming-based monitoring system des
 
 ## Architecture
 
-This service leverages **Apache Spark Structured Streaming** connected to a dedicated Spark cluster (master + 2 workers) to deliver real-time monitoring and alerting. The system is designed for high-frequency, low-latency processing and is suitable for scalable, distributed deployments.
+This service leverages **Apache Spark Structured Streaming** connected to a dedicated Spark cluster (master + 2 workers) to deliver real-time monitoring and alerting.
+For this service we allocated 1 Core and 512 mb. 
 
 ### Real-Time Data Processing
-- **Processing Interval:** Every 5 seconds (17,280 cycles per day)
-- **Latency:** < 1 second per batch
 - **Data Sources:**
   - `iot_valid_data` Kafka topic (sensor data)
   - `weather_valid_data` Kafka topic (weather data)
@@ -18,7 +17,7 @@ This service leverages **Apache Spark Structured Streaming** connected to a dedi
 - **Business Logic:** Distributed, threshold-based rule evaluation
 - **Outputs:**
   - `SENSOR_ANOMALY` alerts (field-specific)
-  - `WEATHER_ALERT` alerts (regional)
+  - `WEATHER_ALERT` alerts (location-specific)
   - Immediate operator guidance
 - **Storage:** PostgreSQL (for fast access and API serving)
 - **Cluster Connection:** `spark://spark-master:7077`
@@ -28,13 +27,12 @@ This service leverages **Apache Spark Structured Streaming** connected to a dedi
 ```
 services/crop-disease-service/
 ├── spark_streaming_service.py        # Main Spark Streaming logic
-├── database/                        # Database abstraction
+├── database/                         # Database 
 │   ├── alert_repository.py           # Alert database operations
-│   └── init.sql                      # Database schema
+│   └── init.sql                      # Database schema (it also contain ml_predictions databse)
 ├── api_service.py                    # REST API endpoints
 ├── main.py                           # Service orchestrator
-├── crop_disease_service_documentation.md  # Additional documentation
-├── logs/                             # Log files
+├── README.md                         # This file                            
 ├── requirements.txt & Dockerfile     # Deployment files
 ```
 
@@ -46,17 +44,11 @@ services/crop-disease-service/
 |  Master + 2 Workers (4 CPU, |
 |  4GB RAM total)             |
 +-----------------------------+
-            |
-            v
-+-----------------------------+
-|  REAL-TIME ALERT PROCESSING |
-|     (Every 5 seconds)       |
-+-----------------------------+
-            |
-            v
+
+
 +-------------------+   +-------------------+
 |  KAFKA TOPIC      |   |  KAFKA TOPIC      |
-|  iot_valid_data   |   |  weather_valid_data|
+|  iot_valid_data   |   | weather_valid_data|
 +-------------------+   +-------------------+
             |                   |
             v                   v
@@ -71,17 +63,16 @@ services/crop-disease-service/
             v
 +---------------------------+
 |    THRESHOLD RULES        |
-|  - Temperature limits     |
-|  - Humidity boundaries    |
-|  - pH range checks        |
-|  - Wind speed alerts      |
+|  - Temperature            |
+|  - Humidity               |
+|  - pH range               |
+|  - Wind                   |
 +---------------------------+
             |
             v
 +---------------------------+
 |   BATCH PROCESSING        |
-|  - Efficient batch writes |
-|  - Error resilience       |
+|  - Batch writes           |
 |  - PostgreSQL storage     |
 +---------------------------+
             |
