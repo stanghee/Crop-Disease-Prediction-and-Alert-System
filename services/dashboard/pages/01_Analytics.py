@@ -28,7 +28,7 @@ API_BASE_URL = "http://crop-disease-service:8000/api/v1"
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 
-st.title("Analytics and Historical Trends")
+st.title("Real-time Data")
 st.markdown("---")
 
 # Sidebar controls
@@ -242,7 +242,7 @@ if analysis_type == "Real-time Data":
                     sensor_df,
                     x='field_id',
                     y='temperature',
-                    title="Current Temperature per Field (°C) - FROM REDIS",
+                    title="Current Temperature per Field (°C)",
                     color='temperature',
                     color_continuous_scale='RdYlBu_r'
                 )
@@ -254,7 +254,7 @@ if analysis_type == "Real-time Data":
                     sensor_df,
                     x='field_id',
                     y='humidity',
-                    title="Current Humidity per Field (%) - FROM REDIS",
+                    title="Current Humidity per Field (%)",
                     color='humidity',
                     color_continuous_scale='Blues'
                 )
@@ -266,7 +266,7 @@ if analysis_type == "Real-time Data":
                     sensor_df,
                     x='field_id',
                     y='soil_ph',
-                    title="Current Soil pH per Field - FROM REDIS",
+                    title="Current Soil pH per Field",
                     color='soil_ph',
                     color_continuous_scale='Greens'
                 )
@@ -279,8 +279,6 @@ if analysis_type == "Real-time Data":
                 display_sensors.columns = ['Field', 'Temperature (°C)', 'Humidity (%)', 'Soil pH', 'Timestamp']
                 st.dataframe(display_sensors, use_container_width=True)
                 
-                # Performance info
-                st.success(f"⚡ Retrieved {len(sensor_df)} sensor records from Redis cache in ~1ms")
             else:
                 st.info("No sensor data available for the selected fields")
         else:
@@ -313,7 +311,7 @@ if analysis_type == "Real-time Data":
                     weather_df,
                     x='location',
                     y='temp_c',
-                    title="Current Weather Temperature (°C) - FROM REDIS",
+                    title="Current Weather Temperature (°C)",
                     color='temp_c',
                     color_continuous_scale='RdYlBu_r'
                 )
@@ -325,7 +323,7 @@ if analysis_type == "Real-time Data":
                     weather_df,
                     x='location',
                     y='humidity',
-                    title="Current Weather Humidity (%) - FROM REDIS",
+                    title="Current Weather Humidity (%)",
                     color='humidity',
                     color_continuous_scale='Blues'
                 )
@@ -338,7 +336,7 @@ if analysis_type == "Real-time Data":
                         weather_df,
                         x='location',
                         y='wind_kph',
-                        title="Current Wind Speed (km/h) - FROM REDIS",
+                        title="Current Wind Speed (km/h)",
                         color='wind_kph',
                         color_continuous_scale='Greys'
                     )
@@ -360,8 +358,6 @@ if analysis_type == "Real-time Data":
                 display_weather.columns = column_names
                 st.dataframe(display_weather, use_container_width=True)
                 
-                # Performance info
-                st.success(f"⚡ Retrieved {len(weather_df)} weather records from Redis cache in ~1ms")
             else:
                 st.info("No weather data available for the selected locations")
         else:
@@ -374,5 +370,4 @@ if analysis_type == "Real-time Data":
 # Footer
 st.markdown("---")
 st.caption(f"Analytics generated on {datetime.now().strftime('%d/%m/%Y at %H:%M:%S')}")
-st.caption("💾 **Data Source**: Redis Cache (Real-time from Kafka streams)")
-st.caption("⚡ **Performance**: Sub-millisecond response times with Redis caching") 
+st.caption("💾 **Data Source**: Weather data from [Weather API](https://www.weatherapi.com/) | IoT sensors from soil monitoring (simulated)")
