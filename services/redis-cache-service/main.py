@@ -55,19 +55,19 @@ def setup_logging():
     logging.getLogger("kafka.coordinator.consumer").setLevel(logging.WARNING)
     logging.getLogger("kafka.cluster").setLevel(logging.WARNING)
     
-    logger.info("🔧 Logging configured successfully")
+    logger.info(" Logging configured successfully")
 
-
+#TODO: remove it 
 def print_startup_banner():
     """Print service startup banner"""
     banner = """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                         🌾 CROP DISEASE MONITORING SYSTEM                    ║
-║                              Redis Cache Service                              ║
+║                         🌾 CROP DISEASE MONITORING SYSTEM                     ║
+║                              Redis Cache Service                             ║
 ║                                                                              ║
-║  📡 High-performance Kafka → Redis streaming cache                          ║
-║  🚀 Real-time data processing for dashboard acceleration                    ║
-║  ⚡ Sub-millisecond response times for sensor & weather data               ║
+║  📡 High-performance Kafka → Redis streaming cache                           ║
+║  🚀 Real-time data processing for dashboard acceleration                     ║
+║  ⚡ Sub-millisecond response times for sensor & weather data                  ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
     """
     print(banner)
@@ -77,18 +77,18 @@ def print_system_info():
     """Print system and configuration information"""
     service_config = get_service_config()
     
-    logger.info("🌾 Redis Cache Service starting up...")
-    logger.info(f"📋 Service Name: {service_config.service_name}")
-    logger.info(f"🕐 Timezone: {service_config.timezone}")
-    logger.info(f"📊 Log Level: {service_config.log_level}")
-    logger.info(f"⚙️ Batch Size: {service_config.batch_size}")
-    logger.info(f"⏱️ Processing Interval: {service_config.processing_interval}s")
-    logger.info(f"🔍 Health Check Interval: {service_config.health_check_interval}s")
+    logger.info(" Redis Cache Service starting up...")
+    logger.info(f" Service Name: {service_config.service_name}")
+    logger.info(f" Timezone: {service_config.timezone}")
+    logger.info(f" Log Level: {service_config.log_level}")
+    logger.info(f" Batch Size: {service_config.batch_size}")
+    logger.info(f" Processing Interval: {service_config.processing_interval}s")
+    logger.info(f" Health Check Interval: {service_config.health_check_interval}s")
     
     # Environment info
-    logger.info(f"🐍 Python: {sys.version}")
-    logger.info(f"🖥️ Platform: {sys.platform}")
-    logger.info(f"📁 Working Directory: {os.getcwd()}")
+    logger.info(f" Python: {sys.version}")
+    logger.info(f" Platform: {sys.platform}")
+    logger.info(f" Working Directory: {os.getcwd()}")
     
     # Service configuration
     redis_host = os.getenv("REDIS_HOST", "redis")
@@ -101,7 +101,7 @@ def print_system_info():
 
 def wait_for_dependencies():
     """Wait for Redis and Kafka to be available before starting"""
-    logger.info("⏳ Checking dependencies...")
+    logger.info(" Checking dependencies...")
     
     # Import here to avoid circular imports
     from redis_client import RedisClient
@@ -112,7 +112,7 @@ def wait_for_dependencies():
     start_time = time.time()
     
     # Check Redis
-    logger.info("🔴 Checking Redis connectivity...")
+    logger.info(" Checking Redis connectivity...")
     redis_ready = False
     while not redis_ready and (time.time() - start_time) < max_wait_time:
         try:
@@ -132,7 +132,7 @@ def wait_for_dependencies():
         sys.exit(1)
     
     # Check Kafka
-    logger.info("📨 Checking Kafka connectivity...")
+    logger.info(" Checking Kafka connectivity...")
     kafka_ready = False
     while not kafka_ready and (time.time() - start_time) < max_wait_time:
         try:
@@ -156,7 +156,7 @@ def wait_for_dependencies():
         sys.exit(1)
     
     total_wait_time = time.time() - start_time
-    logger.success(f"🎯 All dependencies ready after {total_wait_time:.1f} seconds!")
+    logger.success(f" All dependencies ready after {total_wait_time:.1f} seconds!")
 
 
 def main():
@@ -173,11 +173,11 @@ def main():
         wait_for_dependencies()
         
         # Initialize and start the stream processor
-        logger.info("🚀 Initializing Redis Stream Processor...")
+        logger.info(" Initializing Redis Stream Processor...")
         processor = RedisStreamProcessor()
         
         # Start processing
-        logger.info("🎯 Starting stream processing...")
+        logger.info(" Starting stream processing...")
         success = processor.start()
         
         if not success:
@@ -190,7 +190,7 @@ def main():
         logger.error(f"❌ Fatal error in main service: {e}")
         sys.exit(1)
     finally:
-        logger.info("👋 Redis Cache Service shutdown complete")
+        logger.info(" Redis Cache Service shutdown complete")
 
 
 if __name__ == "__main__":

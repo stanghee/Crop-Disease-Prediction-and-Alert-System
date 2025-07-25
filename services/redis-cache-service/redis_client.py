@@ -250,7 +250,7 @@ class RedisClient:
             logger.error(f"❌ Error retrieving all weather data: {e}")
             return {}
     
-    # ==================== ALERTS OPERATIONS ====================
+    # ==================== ALERTS OPERATIONS ==================== #TODO: check if this is correct
     
     def cache_active_alerts(self, alerts: List[Dict[str, Any]]) -> bool:
         """Cache list of active alerts"""
@@ -297,7 +297,56 @@ class RedisClient:
             logger.error(f"❌ Error retrieving active alerts: {e}")
             return []
     
-    # ==================== UTILITY OPERATIONS ====================
+    # ==================== ML ANOMALY OPERATIONS ====================
+    
+    def cache_ml_anomaly(self, field_id: str, anomaly_data: Dict[str, Any]) -> bool:
+        """
+        Cache latest ML anomaly for a specific field
+        Args:
+            field_id: Unique field identifier
+            anomaly_data: ML anomaly data (dict)
+        Returns:
+            bool: True if cached successfully
+        """
+        try:
+            key = self.cache_config.prediction_latest_pattern.format(field_id=field_id)
+            # Add caching metadata
+            cache_data = {
+                **anomaly_data,
+                "cached_at": datetime.now().isoformat(),
+                "cache_ttl": self.cache_config.prediction_data_ttl
+            }
+            serialized_data = ujson.dumps(cache_data)
+            result = self.redis.setex(
+                key,
+                self.cache_config.prediction_data_ttl,
+                serialized_data
+            )
+            if result:
+                logger.debug(f"🤖 Cached ML anomaly for field {field_id}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"❌ Error caching ML anomaly for {field_id}: {e}")
+            return False
+
+    def get_ml_anomaly(self, field_id: str) -> Optional[Dict[str, Any]]:
+        """Get cached ML anomaly for a specific field"""
+        try:
+            key = self.cache_config.prediction_latest_pattern.format(field_id=field_id)
+            cached_data = self.redis.get(key)
+            if cached_data:
+                data = ujson.loads(cached_data)
+                logger.debug(f"🤖 Retrieved ML anomaly for field {field_id}")
+                return data
+            logger.debug(f"❌ No cached ML anomaly for field {field_id}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error retrieving ML anomaly for {field_id}: {e}")
+            return None
+    
+    # ==================== UTILITY OPERATIONS ==================== #TODO: check if we are interest to mantein this 
+    # it is used for batch caching of sensor and weather data and it gives statistics about the cache
     
     def batch_cache_sensor_data(self, sensor_batch: List[Dict[str, Any]]) -> int:
         """

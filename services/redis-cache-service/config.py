@@ -50,8 +50,9 @@ class CacheConfig:
     # Key patterns
     sensor_latest_pattern: str = "sensors:latest:{field_id}"
     weather_latest_pattern: str = "weather:latest:{location}"
-    alerts_active_key: str = "alerts:active"
+    alerts_active_key: str = "alerts:active" #TODO: check if this is correct
     predictions_latest_key: str = "predictions:latest"
+    prediction_latest_pattern: str = "predictions:latest:{field_id}"
     
     # Aggregation patterns
     sensor_hourly_pattern: str = "sensors:hourly:{field_id}:{hour}"
@@ -97,8 +98,8 @@ KAFKA_TOPICS = {
     "sensor_data": "iot_valid_data",
     "weather_data": "weather_valid_data",
     # Future topics for additional data streams
-    "predictions": "ml_predictions",
-    "alerts": "system_alerts"
+    "ml_anomalies": "ml-anomalies",
+    "alerts": "system_alerts" #TODO: change this with the correct topic
 }
 
 # Redis key prefixes for different data types
@@ -113,6 +114,19 @@ REDIS_PREFIXES = {
 # Data validation schemas (basic validation)
 SENSOR_REQUIRED_FIELDS = ["field_id", "temperature", "humidity", "soil_ph", "timestamp"]
 WEATHER_REQUIRED_FIELDS = ["location", "temp_c", "humidity", "timestamp"]
+
+# ML anomaly required fields
+ML_ANOMALY_REQUIRED_FIELDS = [
+    "field_id",
+    "location",
+    "anomaly_score",
+    "is_anomaly",
+    "severity",
+    "recommendations",
+    "model_version",
+    "prediction_timestamp",
+    "features"
+]
 
 # Global configuration instance
 config_instance = AppConfig()

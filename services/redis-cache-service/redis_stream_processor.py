@@ -14,7 +14,7 @@ from kafka import KafkaConsumer, TopicPartition
 from loguru import logger
 
 from redis_client import RedisClient
-from config import get_kafka_config, get_service_config, KAFKA_TOPICS, SENSOR_REQUIRED_FIELDS, WEATHER_REQUIRED_FIELDS
+from config import get_kafka_config, get_service_config, KAFKA_TOPICS, SENSOR_REQUIRED_FIELDS, WEATHER_REQUIRED_FIELDS, ML_ANOMALY_REQUIRED_FIELDS
 
 
 class RedisStreamProcessor:
@@ -50,16 +50,16 @@ class RedisStreamProcessor:
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
         
-        logger.info("🚀 Redis Stream Processor initialized")
+        logger.info(" Redis Stream Processor initialized")
     
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully"""
-        logger.info(f"📡 Received signal {signum}, initiating graceful shutdown...")
+        logger.info(f" Received signal {signum}, initiating graceful shutdown...")
         self.shutdown()
     
     def start(self):
         """Start stream processing for all configured topics"""
-        logger.info("🎯 Starting Redis Stream Processor...")
+        logger.info(" Starting Redis Stream Processor...")
         
         # Connect to Redis
         if not self.redis_client.connect():
@@ -85,6 +85,15 @@ class RedisStreamProcessor:
             weather_thread.start()
             self.processing_threads.append(weather_thread)
             
+            # Start ML anomaly processing thread
+            ml_anomaly_thread = threading.Thread(
+                target=self._process_ml_anomaly_stream,
+                name="MLAnomalyProcessor",
+                daemon=True
+            )
+            ml_anomaly_thread.start()
+            self.processing_threads.append(ml_anomaly_thread)
+            
             # Start statistics monitoring thread
             stats_thread = threading.Thread(
                 target=self._monitor_statistics,
@@ -108,7 +117,7 @@ class RedisStreamProcessor:
     
     def _main_monitoring_loop(self):
         """Main monitoring loop - keeps the service alive"""
-        logger.info("🔄 Main monitoring loop started")
+        logger.info(" Main monitoring loop started")
         
         try:
             while not self.shutdown_event.is_set():
@@ -116,7 +125,7 @@ class RedisStreamProcessor:
                 active_threads = sum(1 for t in self.processing_threads if t.is_alive())
                 
                 if active_threads < len(self.processing_threads):
-                    logger.warning(f"⚠️ Only {active_threads}/{len(self.processing_threads)} threads active")
+                    logger.warning(f" Only {active_threads}/{len(self.processing_threads)} threads active")
                 
                 # Log statistics periodically
                 if self.stats["messages_processed"] > 0:
@@ -138,7 +147,7 @@ class RedisStreamProcessor:
     
     def _process_sensor_stream(self):
         """Process sensor data stream from Kafka to Redis"""
-        logger.info("📡 Starting sensor stream processor...")
+        logger.info(" Starting sensor stream processor...")
         
         consumer = None
         try:
@@ -211,7 +220,7 @@ class RedisStreamProcessor:
         finally:
             if consumer:
                 consumer.close()
-            logger.info("🔌 Sensor stream processor stopped")
+            logger.info(" Sensor stream processor stopped")
     
     def _process_weather_stream(self):
         """Process weather data stream from Kafka to Redis"""
@@ -288,11 +297,67 @@ class RedisStreamProcessor:
         finally:
             if consumer:
                 consumer.close()
-            logger.info("🔌 Weather stream processor stopped")
+            logger.info(" Weather stream processor stopped")
     
+    def _process_ml_anomaly_stream(self):
+        """Process ML anomaly data stream from Kafka to Redis"""
+        logger.info("🤖 Starting ML anomaly stream processor...")
+        consumer = None
+        try:
+            # DEBUG: Stampa il contenuto di KAFKA_TOPICS
+            logger.info(f"KAFKA_TOPICS at ML anomaly consumer: {KAFKA_TOPICS}")
+            logger.info(f"ml_anomalies topic: {KAFKA_TOPICS.get('ml_anomalies')}")
+            # Create consumer for ML anomalies
+            consumer = KafkaConsumer(
+                KAFKA_TOPICS["ml_anomalies"],
+                bootstrap_servers=self.kafka_config.bootstrap_servers,
+                group_id=f"{self.kafka_config.consumer_group_id}_ml_anomalies",
+                auto_offset_reset=self.kafka_config.auto_offset_reset,
+                enable_auto_commit=self.kafka_config.enable_auto_commit,
+                max_poll_records=self.kafka_config.max_poll_records,
+                session_timeout_ms=self.kafka_config.session_timeout_ms,
+                heartbeat_interval_ms=self.kafka_config.heartbeat_interval_ms,
+                value_deserializer=lambda m: json.loads(m.decode('utf-8')) if m else None,
+                consumer_timeout_ms=5000  # Timeout to allow graceful shutdown
+            )
+            self.consumers["ml_anomalies"] = consumer
+            logger.success("✅ ML anomaly consumer connected")
+            batch = []
+            batch_size = self.service_config.batch_size
+            while not self.shutdown_event.is_set():
+                try:
+                    message_batch = consumer.poll(timeout_ms=1000)
+                    if not message_batch:
+                        continue
+                    for topic_partition, messages in message_batch.items():
+                        for message in messages:
+                            if self.shutdown_event.is_set():
+                                break
+                            try:
+                                anomaly_data = message.value
+                                if self._validate_ml_anomaly_data(anomaly_data):
+                                    field_id = anomaly_data["field_id"]
+                                    if self.redis_client.cache_ml_anomaly(field_id, anomaly_data):
+                                        self.stats["messages_cached"] += 1
+                                    self.stats["messages_processed"] += 1
+                                self.stats["last_processed_time"] = datetime.now().isoformat()
+                            except Exception as e:
+                                logger.error(f"❌ Error processing ML anomaly message: {e}")
+                                self.stats["processing_errors"] += 1
+                except Exception as e:
+                    if not self.shutdown_event.is_set():
+                        logger.error(f"❌ Error in ML anomaly stream processing: {e}")
+                        time.sleep(5)
+        except Exception as e:
+            logger.error(f"❌ Fatal error in ML anomaly stream processor: {e}")
+        finally:
+            if consumer:
+                consumer.close()
+            logger.info(" ML anomaly stream processor stopped")
+
     def _monitor_statistics(self):
         """Monitor and cache system statistics"""
-        logger.info("📊 Starting statistics monitor...")
+        logger.info(" Starting statistics monitor...")
         
         while not self.shutdown_event.is_set():
             try:
@@ -307,7 +372,7 @@ class RedisStreamProcessor:
                 logger.error(f"❌ Error in statistics monitoring: {e}")
                 self.shutdown_event.wait(10)  # Wait a bit before retry
         
-        logger.info("📊 Statistics monitor stopped")
+        logger.info(" Statistics monitor stopped")
     
     # TODO: Validazione ridondante?
     # Manteniamo questa validazione anche se il Silver Layer già valida i dati.
@@ -384,11 +449,44 @@ class RedisStreamProcessor:
             logger.debug(f"⚠️ Weather data validation error: {e}")
             return False
     
+    def _validate_ml_anomaly_data(self, data: Dict[str, Any]) -> bool:
+        """Validate ML anomaly data structure"""
+        try:
+            if not isinstance(data, dict):
+                return False
+            for field in ML_ANOMALY_REQUIRED_FIELDS:
+                if field not in data:
+                    logger.debug(f"⚠️ Missing required ML anomaly field: {field}")
+                    return False
+            # Validazione base dei tipi principali
+            if not isinstance(data["field_id"], str):
+                return False
+            if not isinstance(data["location"], str):
+                return False
+            if not isinstance(data["anomaly_score"], (int, float)):
+                return False
+            if not isinstance(data["is_anomaly"], bool):
+                return False
+            if not isinstance(data["severity"], str):
+                return False
+            if not isinstance(data["recommendations"], str):
+                return False
+            if not isinstance(data["model_version"], str):
+                return False
+            if not isinstance(data["prediction_timestamp"], str):
+                return False
+            if not isinstance(data["features"], dict):
+                return False
+            return True
+        except Exception as e:
+            logger.debug(f"⚠️ ML anomaly data validation error: {e}")
+            return False
+    
     def _cache_sensor_batch(self, sensor_batch: List[Dict[str, Any]]) -> int:
         """Cache a batch of sensor data"""
         try:
             cached_count = self.redis_client.batch_cache_sensor_data(sensor_batch)
-            logger.debug(f"📡 Cached {cached_count}/{len(sensor_batch)} sensor records")
+            logger.debug(f" Cached {cached_count}/{len(sensor_batch)} sensor records")
             return cached_count
         except Exception as e:
             logger.error(f"❌ Error caching sensor batch: {e}")
@@ -398,7 +496,7 @@ class RedisStreamProcessor:
         """Cache a batch of weather data"""
         try:
             cached_count = self.redis_client.batch_cache_weather_data(weather_batch)
-            logger.debug(f"🌦️ Cached {cached_count}/{len(weather_batch)} weather records")
+            logger.debug(f" Cached {cached_count}/{len(weather_batch)} weather records")
             return cached_count
         except Exception as e:
             logger.error(f"❌ Error caching weather batch: {e}")
@@ -458,7 +556,7 @@ class RedisStreamProcessor:
         # Close all Kafka consumers
         for name, consumer in self.consumers.items():
             try:
-                logger.info(f"🔌 Closing {name} consumer...")
+                logger.info(f" Closing {name} consumer...")
                 consumer.close()
             except Exception as e:
                 logger.warning(f"Error closing {name} consumer: {e}")
@@ -467,7 +565,7 @@ class RedisStreamProcessor:
         timeout = self.service_config.shutdown_timeout
         for thread in self.processing_threads:
             try:
-                logger.info(f"⏳ Waiting for thread {thread.name} to finish...")
+                logger.info(f" Waiting for thread {thread.name} to finish...")
                 thread.join(timeout=timeout)
                 if thread.is_alive():
                     logger.warning(f"Thread {thread.name} did not finish within timeout")
