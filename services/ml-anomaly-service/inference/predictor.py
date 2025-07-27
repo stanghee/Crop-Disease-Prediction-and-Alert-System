@@ -4,6 +4,8 @@ Streaming Inference - Real-time anomaly detection
 Reads from Kafka gold-ml-features topic and predicts anomalies
 """
 
+#TODO: remove everithing related to sensor_anomaly_rate
+
 import logging
 import json
 import math
@@ -83,43 +85,45 @@ class StreamingPredictor:
                      .withColumn("is_anomaly", lit(False)) \
                      .withColumn("severity", lit("LOW")) \
                      .withColumn("recommendations", lit("Model not available - check training status"))
+        
         # Assembla e scala le feature
         assembler = VectorAssembler(inputCols=CORE_FEATURES, outputCol="features_vec")
         assembled_df = assembler.transform(df)
         scaled_df = self.scaler.transform(assembled_df)
+        
         # Predici cluster
         pred_df = self.model.transform(scaled_df)
-        # Usa approccio semplificato senza UDF per evitare problemi di serializzazione
-        # Calcola anomalie basate sulla predizione del cluster e features estreme
         
-        # Score semplificato basato su deviazioni dalle feature normali
-        pred_df = pred_df.withColumn(
-            "temp_anomaly", 
-            when((col("sensor_avg_temperature") > 40) | (col("sensor_avg_temperature") < 5), 1.0)
-            .when((col("sensor_avg_temperature") > 35) | (col("sensor_avg_temperature") < 10), 0.7)
-            .otherwise(0.0)
-        ).withColumn(
-            "humidity_anomaly",
-            when((col("sensor_avg_humidity") < 20) | (col("sensor_avg_humidity") > 95), 1.0)
-            .when((col("sensor_avg_humidity") < 30) | (col("sensor_avg_humidity") > 85), 0.5)
-            .otherwise(0.0)
-        ).withColumn(
-            "ph_anomaly",
-            when((col("sensor_avg_soil_ph") < 4.0) | (col("sensor_avg_soil_ph") > 9.0), 1.0)
-            .when((col("sensor_avg_soil_ph") < 5.5) | (col("sensor_avg_soil_ph") > 8.0), 0.5)
-            .otherwise(0.0)
-        ).withColumn(
-            "diff_anomaly",
-            when((col("temp_differential") > 20) | (col("humidity_differential") > 40), 1.0)
-            .when((col("temp_differential") > 10) | (col("humidity_differential") > 25), 0.5)
-            .otherwise(0.0)
-        )
+        # Ottieni i centroidi dal modello K-means
+        centroids = self.model.clusterCenters()
         
-        # Calcola score finale 
-        pred_df = pred_df.withColumn(
-            "distance",
-            (col("temp_anomaly") + col("humidity_anomaly") + col("ph_anomaly") + col("diff_anomaly") + col("sensor_anomaly_rate")) / 5.0
-        )
+        # Calcola distanza euclidea dal centroide del cluster assegnato usando funzioni native
+        # Converte il vettore scaled_features in array per il calcolo della distanza
+        from pyspark.ml.linalg import Vectors
+        from pyspark.sql.functions import array, sqrt, pow, when, lit
+        from pyspark.ml.functions import vector_to_array
+        
+        # Converti il vettore features in array
+        pred_df = pred_df.withColumn("features_array", vector_to_array(col("scaled_features")))
+        
+        # Per ogni cluster, calcola la distanza se è quello assegnato
+        distance_expr = lit(0.0)  # Default distance
+        
+        for cluster_id in range(len(centroids)):
+            centroid = centroids[cluster_id]
+            
+            # Crea l'espressione per calcolare la distanza euclidea
+            sum_squares = lit(0.0)
+            for i, centroid_val in enumerate(centroid):
+                sum_squares = sum_squares + pow(col("features_array")[i] - lit(float(centroid_val)), 2)
+            
+            cluster_distance = sqrt(sum_squares)
+            
+            # Se il cluster prediction è questo, usa questa distanza
+            distance_expr = when(col("prediction") == cluster_id, cluster_distance).otherwise(distance_expr)
+        
+        # Calcola la distanza finale dal centroide
+        pred_df = pred_df.withColumn("distance", distance_expr)
         
         # Determina anomalia e severity senza UDF debug
         pred_df = pred_df.withColumn(
@@ -130,38 +134,38 @@ class StreamingPredictor:
                         .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD * 0.5), "MEDIUM")
                         .otherwise("LOW")
         )
-        # Raccomandazioni usando operazioni SQL native (senza UDF)
+        # Raccomandazioni basate sulla distanza dal centroide e valori delle features
         pred_df = pred_df.withColumn(
             "recommendations",
             concat_ws(" | ",
-                # Base sulle distanze
-                when(col("distance") > lit(CRITICAL_DISTANCE_THRESHOLD), "IMMEDIATE INTERVENTION REQUIRED")
-                .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD), "WARNING: Anomaly detected - enhanced monitoring recommended") 
-                .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD * 0.5), "MEDIUM risk detected - increase monitoring frequency")
-                .otherwise("LOW risk - continue routine monitoring"),
+                # Base sulla distanza dal centroide
+                when(col("distance") > lit(CRITICAL_DISTANCE_THRESHOLD), "CRITICAL ANOMALY: Immediate intervention required - deviation from normal cluster")
+                .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD), "WARNING: Significant deviation from normal patterns detected - enhanced monitoring recommended") 
+                .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD * 0.7), "MEDIUM risk: Moderate deviation detected - increase monitoring frequency")
+                .otherwise("LOW risk: Normal cluster behavior - continue routine monitoring"),
                 
-                # Temperature
-                when(col("sensor_avg_temperature") > 30, "High temperature: consider irrigation and shading")
-                .when(col("sensor_avg_temperature") < 10, "Low temperature: protect crops from frost"),
+                # Temperature-based recommendations
+                when(col("sensor_avg_temperature") > 30, "High temperature detected: consider irrigation and shading")
+                .when(col("sensor_avg_temperature") < 10, "Low temperature detected: protect crops from frost"),
                 
-                # Humidity  
-                when(col("sensor_avg_humidity") > 85, "High humidity: fungal risk - improve ventilation")
-                .when(col("sensor_avg_humidity") < 40, "Low humidity: increase irrigation"),
+                # Humidity-based recommendations  
+                when(col("sensor_avg_humidity") > 85, "High humidity detected: fungal risk - improve ventilation")
+                .when(col("sensor_avg_humidity") < 40, "Low humidity detected: increase irrigation"),
                 
-                # Soil pH
-                when(col("sensor_avg_soil_ph") < 6.0, "Acidic pH: consider liming")
-                .when(col("sensor_avg_soil_ph") > 7.5, "Alkaline pH: consider organic acidifiers"),
+                # Soil pH recommendations
+                when(col("sensor_avg_soil_ph") < 6.0, "Acidic soil pH: consider liming")
+                .when(col("sensor_avg_soil_ph") > 7.5, "Alkaline soil pH: consider organic acidifiers"),
                 
-                # Differenziali  
-                when(abs(col("temp_differential")) > 5, "High temperature differential: verify sensors"),
-                when(abs(col("humidity_differential")) > 15, "High humidity differential: check irrigation"),
+                # Differential-based recommendations  
+                when(abs(col("temp_differential")) > 10, "High temperature differential: verify sensor readings"),
+                when(abs(col("humidity_differential")) > 20, "High humidity differential: check irrigation uniformity"),
                 
-                # Anomaly rate
-                when(col("sensor_anomaly_rate") > 0.3, "High anomaly rate: verify sensor calibration"),
+                # High anomaly rate in sensor data
+                when(col("sensor_anomaly_rate") > 0.3, "High sensor anomaly rate: verify sensor calibration and maintenance"),
                 
-                # Combinazioni critiche
-                when((col("sensor_avg_temperature") > 25) & (col("sensor_avg_humidity") > 80), "Ideal conditions for pathogens: apply preventive measures"),
-                when((col("sensor_avg_soil_ph") < 6.0) & (col("sensor_avg_humidity") > 70), "Nutritional stress + humidity: consider fertilizers and drainage")
+                # Critical environmental combinations
+                when((col("sensor_avg_temperature") > 25) & (col("sensor_avg_humidity") > 80), "High temp + humidity: Ideal pathogen conditions - apply preventive measures"),
+                when((col("sensor_avg_soil_ph") < 6.0) & (col("sensor_avg_humidity") > 70), "Acidic pH + high humidity: Risk of nutritional stress - consider fertilizers and drainage")
             )
         )
         # Output finale

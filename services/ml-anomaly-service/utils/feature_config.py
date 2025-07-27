@@ -10,9 +10,8 @@ CORE_FEATURES = [
     'sensor_avg_humidity', 
     'sensor_avg_soil_ph',
     'temp_differential',      # sensor vs weather temperature difference
-    'humidity_differential',  # sensor vs weather humidity difference
-    'sensor_anomaly_rate'     # existing anomaly rate from data quality 
-] #TODO: remove sensor anomaly rate from core features
+    'humidity_differential'   # sensor vs weather humidity difference
+] 
 
 # Model configuration for KMeans
 KMEANS_CONFIG = {
@@ -21,10 +20,10 @@ KMEANS_CONFIG = {
     'seed': 42             # Random seed
 }
 
-# TODO: force this to be in a lower range (just for the exam demo)
-# Soglie per anomaly score (0.0-1.0+ range)
-ANOMALY_DISTANCE_THRESHOLD = 0.05   # Score > 0.05 = anomalia
-CRITICAL_DISTANCE_THRESHOLD = 0.5  # Score > 0.5 = criticità
+# Soglie per anomaly score basate su distanza euclidea dal centroide
+# Le distanze tipiche con 5 features scalate sono nell'ordine di 1-3 per punti normali
+ANOMALY_DISTANCE_THRESHOLD = 2.5   # Distanza > 2.5 = anomalia
+CRITICAL_DISTANCE_THRESHOLD = 4.0  # Distanza > 4.0 = criticità
 
 # Processing configuration  
 BATCH_INTERVAL_SECONDS = 30   # Process every 30 seconds
