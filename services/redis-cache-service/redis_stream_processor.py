@@ -518,7 +518,44 @@ class RedisStreamProcessor:
         except Exception as e:
             logger.debug(f"⚠️ Weather data validation error: {e}")
             return False
-    
+            
+    #TODO: check if this function "validate_alert_data" is needed.
+    def _validate_alert_data(self, data: Dict[str, Any]) -> bool:
+        """Validate alert data structure"""
+        try:
+            if not isinstance(data, dict):
+                return False
+            
+            # Check required fields
+            for field in ALERT_REQUIRED_FIELDS:
+                if field not in data:
+                    logger.debug(f"⚠️ Missing required alert field: {field}")
+                    return False
+            
+            # Basic data type validation
+            zone_id = data.get("zone_id")
+            alert_type = data.get("alert_type")
+            severity = data.get("severity")
+            status = data.get("status")
+            
+            if not zone_id or not isinstance(zone_id, str):
+                return False
+            
+            if not alert_type or not isinstance(alert_type, str):
+                return False
+            
+            if not severity or not isinstance(severity, str):
+                return False
+            
+            if not status or not isinstance(status, str):
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.debug(f"⚠️ Alert data validation error: {e}")
+            return False
+
     def _validate_ml_anomaly_data(self, data: Dict[str, Any]) -> bool:
         """Validate ML anomaly data structure"""
         try:

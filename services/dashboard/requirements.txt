@@ -24,6 +24,12 @@ pydantic==2.5.0
 # Redis for cache access
 redis==5.0.1
 
+# MinIO for satellite images
+minio==7.2.0
+
+# PostgreSQL for analytics
+psycopg2-binary==2.9.9
+
 # Utilities
 python-dotenv==1.0.0
 pillow==10.0.1
