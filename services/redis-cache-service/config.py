@@ -51,6 +51,7 @@ class CacheConfig:
     sensor_latest_pattern: str = "sensors:latest:{field_id}"
     weather_latest_pattern: str = "weather:latest:{location}"
     alerts_active_key: str = "alerts:active" #TODO: check if this is correct
+    alerts_latest_pattern: str = "alerts:latest:{zone_id}"
     predictions_latest_key: str = "predictions:latest"
     prediction_latest_pattern: str = "predictions:latest:{field_id}"
     
@@ -99,7 +100,7 @@ KAFKA_TOPICS = {
     "weather_data": "weather_valid_data",
     # Future topics for additional data streams
     "ml_anomalies": "ml-anomalies",
-    "alerts": "system_alerts" #TODO: change this with the correct topic
+    "alerts_anomalies": "alerts-anomalies" #TODO: change this with the correct topic
 }
 
 # Redis key prefixes for different data types
@@ -126,6 +127,16 @@ ML_ANOMALY_REQUIRED_FIELDS = [
     "model_version",
     "prediction_timestamp",
     "features"
+]
+
+# Alert required fields
+ALERT_REQUIRED_FIELDS = [
+    "zone_id",
+    "alert_timestamp", 
+    "alert_type",
+    "severity",
+    "message",
+    "status"
 ]
 
 # Global configuration instance

@@ -176,7 +176,7 @@ st_autorefresh(interval=10 * 1000, key="redis_realtime_data_autorefresh")
 
 # Main layout
 if analysis_type == "Real-time Data":
-    st.header("Real-time Data (Redis Cache)")
+    st.header("Real-time Data (Redis Cache, we are using it for testing)")
     
     # Show Redis connection status
     col_status1, col_status2, col_status3 = st.columns(3)

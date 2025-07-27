@@ -297,6 +297,88 @@ class RedisClient:
             logger.error(f"❌ Error retrieving active alerts: {e}")
             return []
     
+    def cache_latest_alert(self, zone_id: str, alert_data: Dict[str, Any]) -> bool:
+        """
+        Cache latest alert for a specific zone_id
+        Args:
+            zone_id: Zone identifier (field_id for sensors, location for weather)
+            alert_data: Alert data (dict)
+        Returns:
+            bool: True if cached successfully
+        """
+        try:
+            key = self.cache_config.alerts_latest_pattern.format(zone_id=zone_id)
+            
+            # Add caching metadata
+            cache_data = {
+                **alert_data,
+                "cached_at": datetime.now().isoformat(),
+                "cache_ttl": self.cache_config.alert_data_ttl
+            }
+            
+            serialized_data = ujson.dumps(cache_data)
+            result = self.redis.setex(
+                key,
+                self.cache_config.alert_data_ttl,
+                serialized_data
+            )
+            
+            if result:
+                logger.debug(f"🚨 Cached latest alert for zone {zone_id}")
+                return True
+            return False
+            
+        except Exception as e:
+            logger.error(f"❌ Error caching latest alert for {zone_id}: {e}")
+            return False
+    
+    def get_latest_alert(self, zone_id: str) -> Optional[Dict[str, Any]]:
+        """Get cached latest alert for a specific zone_id"""
+        try:
+            key = self.cache_config.alerts_latest_pattern.format(zone_id=zone_id)
+            cached_data = self.redis.get(key)
+            
+            if cached_data:
+                data = ujson.loads(cached_data)
+                logger.debug(f"🚨 Retrieved latest alert for zone {zone_id}")
+                return data
+            
+            logger.debug(f"❌ No cached latest alert for zone {zone_id}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error retrieving latest alert for {zone_id}: {e}")
+            return None
+    
+    def get_all_latest_alerts(self) -> Dict[str, Dict[str, Any]]:
+        """Get all cached latest alerts by zone_id"""
+        try:
+            pattern = self.cache_config.alerts_latest_pattern.format(zone_id="*")
+            keys = self.redis.keys(pattern)
+            
+            if not keys:
+                return {}
+            
+            # Use pipeline for batch retrieval
+            with self.get_pipeline() as pipe:
+                for key in keys:
+                    pipe.get(key)
+                results = pipe.execute()
+            
+            alerts_data = {}
+            for key, data in zip(keys, results):
+                if data:
+                    # Extract zone_id from key
+                    zone_id = key.decode('utf-8').split(':')[-1]
+                    alerts_data[zone_id] = ujson.loads(data)
+            
+            logger.debug(f"📖 Retrieved latest alerts for {len(alerts_data)} zones")
+            return alerts_data
+            
+        except Exception as e:
+            logger.error(f"❌ Error retrieving all latest alerts: {e}")
+            return {}
+    
     # ==================== ML ANOMALY OPERATIONS ====================
     
     def cache_ml_anomaly(self, field_id: str, anomaly_data: Dict[str, Any]) -> bool:
@@ -461,7 +543,9 @@ class RedisClient:
             stats = {
                 "sensor_keys": len(self.redis.keys("sensors:latest:*")),
                 "weather_keys": len(self.redis.keys("weather:latest:*")),
-                "alert_keys": len(self.redis.keys("alerts:*")),
+                "alert_latest_keys": len(self.redis.keys("alerts:latest:*")),
+                "alert_active_keys": len(self.redis.keys("alerts:active")),
+                "prediction_keys": len(self.redis.keys("predictions:latest:*")),
                 "total_keys": self.redis.dbsize()
             }
             

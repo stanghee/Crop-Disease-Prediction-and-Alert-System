@@ -234,11 +234,11 @@ class SparkStreamingAlertService:
             .start()
     
     def _write_alerts_batch(self, batch_df, batch_id):
-        """Write alerts batch to PostgreSQL"""
+        """Write alerts batch to PostgreSQL and Kafka"""
         try:
             logger.info(f"📊 Processing alerts batch {batch_id}")
             
-            # Write directly to PostgreSQL without counting first
+            # Write to PostgreSQL
             batch_df.write \
                 .format("jdbc") \
                 .option("url", "jdbc:postgresql://postgres:5432/crop_disease_ml") \
@@ -250,6 +250,26 @@ class SparkStreamingAlertService:
                 .save()
             
             logger.info(f"✅ Successfully saved alerts from batch {batch_id} to database")
+            
+            # Write to Kafka topic "alerts-anomalies"
+            try:
+                # Convert DataFrame to JSON format for Kafka
+                kafka_df = batch_df.select(
+                    to_json(struct("*")).alias("value")
+                )
+                
+                kafka_df.write \
+                    .format("kafka") \
+                    .option("kafka.bootstrap.servers", "kafka:9092") \
+                    .option("topic", "alerts-anomalies") \
+                    .option("checkpointLocation", f"/tmp/kafka-alerts-checkpoint-{batch_id}") \
+                    .mode("append") \
+                    .save()
+                
+                logger.info(f"✅ Successfully sent alerts from batch {batch_id} to Kafka topic 'alerts-anomalies'")
+                
+            except Exception as kafka_error:
+                logger.error(f"❌ Error sending alerts to Kafka from batch {batch_id}: {kafka_error}")
             
         except Exception as e:
             logger.error(f"❌ Error writing alerts batch {batch_id}: {e}")

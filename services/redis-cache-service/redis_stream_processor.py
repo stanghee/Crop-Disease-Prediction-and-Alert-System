@@ -14,7 +14,7 @@ from kafka import KafkaConsumer, TopicPartition
 from loguru import logger
 
 from redis_client import RedisClient
-from config import get_kafka_config, get_service_config, KAFKA_TOPICS, SENSOR_REQUIRED_FIELDS, WEATHER_REQUIRED_FIELDS, ML_ANOMALY_REQUIRED_FIELDS
+from config import get_kafka_config, get_service_config, KAFKA_TOPICS, SENSOR_REQUIRED_FIELDS, WEATHER_REQUIRED_FIELDS, ML_ANOMALY_REQUIRED_FIELDS, ALERT_REQUIRED_FIELDS
 
 
 class RedisStreamProcessor:
@@ -93,6 +93,15 @@ class RedisStreamProcessor:
             )
             ml_anomaly_thread.start()
             self.processing_threads.append(ml_anomaly_thread)
+            
+            # Start alerts processing thread
+            alerts_thread = threading.Thread(
+                target=self._process_alerts_stream,
+                name="AlertsProcessor",
+                daemon=True
+            )
+            alerts_thread.start()
+            self.processing_threads.append(alerts_thread)
             
             # Start statistics monitoring thread
             stats_thread = threading.Thread(
@@ -354,6 +363,67 @@ class RedisStreamProcessor:
             if consumer:
                 consumer.close()
             logger.info(" ML anomaly stream processor stopped")
+
+    def _process_alerts_stream(self):
+        """Process alerts data stream from Kafka to Redis"""
+        logger.info("🚨 Starting alerts stream processor...")
+        consumer = None
+        try:
+            # Create consumer for alerts
+            consumer = KafkaConsumer(
+                KAFKA_TOPICS["alerts_anomalies"],
+                bootstrap_servers=self.kafka_config.bootstrap_servers,
+                group_id=f"{self.kafka_config.consumer_group_id}_alerts",
+                auto_offset_reset=self.kafka_config.auto_offset_reset,
+                enable_auto_commit=self.kafka_config.enable_auto_commit,
+                max_poll_records=self.kafka_config.max_poll_records,
+                session_timeout_ms=self.kafka_config.session_timeout_ms,
+                heartbeat_interval_ms=self.kafka_config.heartbeat_interval_ms,
+                value_deserializer=lambda m: json.loads(m.decode('utf-8')) if m else None,
+                consumer_timeout_ms=5000  # Timeout to allow graceful shutdown
+            )
+            
+            self.consumers["alerts"] = consumer
+            logger.success("✅ Alerts consumer connected")
+            
+            while not self.shutdown_event.is_set():
+                try:
+                    message_batch = consumer.poll(timeout_ms=1000)
+                    
+                    if not message_batch:
+                        continue
+                    
+                    for topic_partition, messages in message_batch.items():
+                        for message in messages:
+                            if self.shutdown_event.is_set():
+                                break
+                            
+                            try:
+                                alert_data = message.value
+                                
+                                if self._validate_alert_data(alert_data):
+                                    zone_id = alert_data["zone_id"]
+                                    if self.redis_client.cache_latest_alert(zone_id, alert_data):
+                                        self.stats["messages_cached"] += 1
+                                    self.stats["messages_processed"] += 1
+                                
+                                self.stats["last_processed_time"] = datetime.now().isoformat()
+                                
+                            except Exception as e:
+                                logger.error(f"❌ Error processing alert message: {e}")
+                                self.stats["processing_errors"] += 1
+                
+                except Exception as e:
+                    if not self.shutdown_event.is_set():
+                        logger.error(f"❌ Error in alerts stream processing: {e}")
+                        time.sleep(5)
+        
+        except Exception as e:
+            logger.error(f"❌ Fatal error in alerts stream processor: {e}")
+        finally:
+            if consumer:
+                consumer.close()
+            logger.info("🚨 Alerts stream processor stopped")
 
     def _monitor_statistics(self):
         """Monitor and cache system statistics"""
