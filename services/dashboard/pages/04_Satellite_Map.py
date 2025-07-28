@@ -199,7 +199,6 @@ def create_field_map(field_data_list: List[Dict], alerts: Dict[str, Dict], cente
         # Get alert info for popup
         field_alert = alerts.get(field_id)
         alert_info = ""
-        alert_link = ""
         if field_alert:
             alert_type = field_alert.get('alert_type', 'UNKNOWN')
             severity = field_alert.get('severity', 'UNKNOWN')
@@ -211,85 +210,20 @@ def create_field_map(field_data_list: List[Dict], alerts: Dict[str, Dict], cente
                 <strong>Message:</strong> {message}
             </div>
             """
-            alert_link = f"""
-            <div style="margin-top: 8px;">
-                <a href="javascript:void(0)" onclick="window.open('http://localhost:8501/03_Threshold_Alerts', '_blank')" style="color: #ff4d4f; text-decoration: none; font-weight: bold;">
-                    🔗 View All Alerts
-                </a>
-            </div>
-            """
         
-        # Create popup content with tabs
+        # Create simplified popup content without tabs
         popup_content = f"""
         <div style="width: 300px;">
             <h4 style="margin-bottom: 15px; color: #333;">Field {field_id}</h4>
             
-            <!-- Tab Navigation -->
-            <div style="margin-bottom: 15px;">
-                <button onclick="showTab('sensor')" id="sensor-tab" style="
-                    background-color: #4CAF50; 
-                    color: white; 
-                    padding: 8px 12px; 
-                    border: none; 
-                    border-radius: 4px 0 0 4px; 
-                    cursor: pointer;
-                    font-size: 12px;
-                ">📊 Sensor Data</button>
-                <button onclick="showTab('ml')" id="ml-tab" style="
-                    background-color: #2196F3; 
-                    color: white; 
-                    padding: 8px 12px; 
-                    border: none; 
-                    border-radius: 0 4px 4px 0; 
-                    cursor: pointer;
-                    font-size: 12px;
-                ">🤖 ML Predictions</button>
+            <div style="background-color: #f9f9f9; padding: 12px; border-radius: 6px; margin-bottom: 10px;">
+                <p style="margin: 5px 0;"><strong>🌡️ Temperature:</strong> {temperature}°C</p>
+                <p style="margin: 5px 0;"><strong>💧 Humidity:</strong> {humidity}%</p>
+                <p style="margin: 5px 0;"><strong>🧪 Soil pH:</strong> {soil_ph}</p>
+                <p style="margin: 5px 0;"><strong>⏰ Last Update:</strong> {field_data.get('timestamp', 'N/A')}</p>
             </div>
             
-            <!-- Sensor Data Tab -->
-            <div id="sensor-content" style="display: block;">
-                <div style="background-color: #f9f9f9; padding: 12px; border-radius: 6px; margin-bottom: 10px;">
-                    <p style="margin: 5px 0;"><strong>🌡️ Temperature:</strong> {temperature}°C</p>
-                    <p style="margin: 5px 0;"><strong>💧 Humidity:</strong> {humidity}%</p>
-                    <p style="margin: 5px 0;"><strong>🧪 Soil pH:</strong> {soil_ph}</p>
-                    <p style="margin: 5px 0;"><strong>⏰ Last Update:</strong> {field_data.get('timestamp', 'N/A')}</p>
-                </div>
-                {alert_info}
-                {alert_link}
-            </div>
-            
-            <!-- ML Predictions Tab -->
-            <div id="ml-content" style="display: none;">
-                <div style="background-color: #e3f2fd; padding: 12px; border-radius: 6px; text-align: center;">
-                    <p style="margin: 5px 0; color: #1976d2; font-weight: bold;">🤖 ML Predictions</p>
-                    <p style="margin: 5px 0; color: #666; font-size: 12px;">Coming Soon...</p>
-                    <p style="margin: 5px 0; color: #666; font-size: 11px;">Disease detection and anomaly scores will be available here</p>
-                    <div style="margin-top: 10px;">
-                        <a href="javascript:void(0)" onclick="window.open('http://localhost:8501/02_ML_Insights', '_blank')" style="color: #1976d2; text-decoration: none; font-weight: bold;">
-                            🔗 View ML Insights
-                        </a>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- JavaScript for tab switching -->
-            <script>
-            function showTab(tabName) {{
-                // Hide all content
-                document.getElementById('sensor-content').style.display = 'none';
-                document.getElementById('ml-content').style.display = 'none';
-                
-                // Remove active class from all tabs
-                document.getElementById('sensor-tab').style.backgroundColor = '#4CAF50';
-                document.getElementById('ml-tab').style.backgroundColor = '#2196F3';
-                
-                // Show selected content
-                document.getElementById(tabName + '-content').style.display = 'block';
-                
-                // Add active class to selected tab
-                document.getElementById(tabName + '-tab').style.backgroundColor = '#333';
-            }}
-            </script>
+            {alert_info}
         </div>
         """
         
@@ -304,7 +238,7 @@ def create_field_map(field_data_list: List[Dict], alerts: Dict[str, Dict], cente
     return m
 
 # Streamlit UI
-st.title("🗺️ Satellite Map - Field Monitoring")
+st.title("Satellite Map - Field Monitoring")
 st.markdown("---")
 
 # Get Redis client
@@ -312,7 +246,7 @@ redis_client = get_redis_client()
 
 # Sidebar controls
 with st.sidebar:
-    st.header("🗺️ Map Settings")
+    st.header("Map Settings")
     
     # Field selection
     st.subheader("Field Selection")
@@ -377,7 +311,7 @@ for field_id in selected_fields:
 
 # Create and display map and satellite image
 if field_data_list:
-    st.subheader("🌾 Agricultural Fields Map & Satellite Image")
+    st.subheader("Agricultural Fields Map & Satellite Image")
     
     # Get all latest alerts
     all_alerts = get_all_latest_alerts(redis_client)
@@ -386,7 +320,7 @@ if field_data_list:
     col1, col2 = st.columns([3, 2])  # 60% map, 40% image
     
     with col1:
-        st.markdown("**🗺️ Agricultural Fields Map**")
+        st.markdown("**Agricultural Fields Map**")
         
         # Create map with alerts
         field_map = create_field_map(field_data_list, all_alerts, center_lat, center_lon)
@@ -400,7 +334,7 @@ if field_data_list:
         )
     
     with col2:
-        st.markdown("**🛰️ Latest Satellite Image**")
+        st.markdown("**Latest Satellite Image**")
         
         # Get and display satellite image
         satellite_data = get_latest_satellite_image()
@@ -427,7 +361,7 @@ if field_data_list:
             """, unsafe_allow_html=True)
     
     # Show field statistics
-    st.subheader("📊 Field Statistics")
+    st.subheader("Field Statistics")
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -447,7 +381,7 @@ if field_data_list:
         st.metric("Avg Soil pH", f"{avg_ph:.1f}")
     
     # Show detailed field data table
-    st.subheader("📋 Field Details")
+    st.subheader("Field Details")
     
     if field_data_list:
         # Prepare data for table

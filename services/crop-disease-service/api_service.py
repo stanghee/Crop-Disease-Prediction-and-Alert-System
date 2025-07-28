@@ -112,6 +112,25 @@ class APIService:
                 raise HTTPException(status_code=500, detail=str(e))
         
         
+        @self.router.get("/alerts/historical")
+        async def get_historical_alerts(days_back: int = 7, zone_id: str = None):
+            """Get historical alerts for Data Insights"""
+            try:
+                alerts = self.alert_repository.get_historical_alerts(days_back=days_back, zone_id=zone_id)
+                return {
+                    "status": "success",
+                    "data": {
+                        "alerts": alerts,
+                        "total": len(alerts),
+                        "days_back": days_back,
+                        "zone_id": zone_id
+                    },
+                    "timestamp": datetime.now().isoformat()
+                }
+            except Exception as e:
+                logger.error(f"Error getting historical alerts: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
         @self.router.post("/alerts/cleanup")
         async def cleanup_old_alerts(days_old: int = 30):
             """Clean up old alerts"""
@@ -127,6 +146,41 @@ class APIService:
                 }
             except Exception as e:
                 logger.error(f"Error cleaning up alerts: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        ###################### ML PREDICTIONS ENDPOINTS ######################
+
+        @self.router.get("/predictions")
+        async def get_ml_predictions(days_back: int = 7, field_id: str = None):
+            """Get ML predictions for Data Insights"""
+            try:
+                predictions = self.alert_repository.get_ml_predictions(days_back=days_back, field_id=field_id)
+                return {
+                    "status": "success",
+                    "data": {
+                        "predictions": predictions,
+                        "total": len(predictions),
+                        "days_back": days_back,
+                        "field_id": field_id
+                    },
+                    "timestamp": datetime.now().isoformat()
+                }
+            except Exception as e:
+                logger.error(f"Error getting ML predictions: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.router.get("/predictions/statistics")
+        async def get_ml_statistics():
+            """Get ML prediction statistics for Data Insights"""
+            try:
+                stats = self.alert_repository.get_ml_statistics()
+                return {
+                    "status": "success",
+                    "data": stats,
+                    "timestamp": datetime.now().isoformat()
+                }
+            except Exception as e:
+                logger.error(f"Error getting ML statistics: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         ###################### SYSTEM ENDPOINTS ######################
