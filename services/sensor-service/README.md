@@ -23,7 +23,7 @@ The Sensor Service operates as a critical data source generating realistic senso
 
 ### Data Flow
 
-![Sensor Service Data Flow](Images/sensor_data_flow.png)
+![Sensor Service Data Flow](../Images/sensor_data_flow.png)
 
 ## Data Schema
 
