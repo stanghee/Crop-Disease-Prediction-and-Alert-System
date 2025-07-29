@@ -187,6 +187,8 @@ class SilverZoneProcessor:
             logger.error(f"[STREAMING] Error starting sensor Silver streaming: {e}")
             return None
 
+#TODO: add uv and condition info, and check all the variables for the weather schema
+
     def start_weather_stream(self):
         """
         Structured Streaming: process weather data from Bronze to Silver in real-time.

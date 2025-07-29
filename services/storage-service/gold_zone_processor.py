@@ -32,7 +32,9 @@ class GoldZoneProcessor:
         self.silver_path = "s3a://silver/"
         self.gold_path = "s3a://gold/"
         self.sliding_window_minutes = 10
-    
+
+  #TODO: check uv info and condition info from the weather schema, enviroment stress scoring and coombined risk score should be removed
+  #TODO: we should add month sin cos 
     def create_ml_features_sliding_window(self) -> DataFrame:
         """
         Create ML features using sliding window approach (10 minutes)

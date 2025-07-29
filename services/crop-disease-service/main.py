@@ -1,85 +1,50 @@
 #!/usr/bin/env python3
 """
 Crop Disease Service Main Entry Point
-Threshold-Based Alert System Architecture
+Spark Streaming Alert System Architecture
 """
 
 import os
 import logging
-import threading
 import time
 from datetime import datetime
 from typing import Dict, Any
 
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Import service components
+from spark_streaming_service import SparkStreamingAlertService
 from api_service import APIService
-import sys
-sys.path.append('Threshold-alert')
-from continuous_monitor_refactored import ContinuousMonitorRefactored
+from database.alert_repository import AlertRepository
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 class CropDiseaseServiceOrchestrator:
     """
-    Main orchestrator for the Threshold-Based Alert Service
+    Main orchestrator for the Spark Streaming Alert Service
     """
     
     def __init__(self):
-        # Create a simple threshold service for compatibility
-        class SimpleThresholdService:
-            def __init__(self, continuous_monitor=None):
-                self.spark = None  # No Spark session needed for threshold alerts
-                self.continuous_monitor = continuous_monitor
-            
-            def get_status(self):
-                if self.continuous_monitor:
-                    return self.continuous_monitor.get_status()
-                else:
-                    return {"status": "threshold-based-only", "timestamp": datetime.now().isoformat()}
-            
-            def get_active_alerts(self):
-                if (self.continuous_monitor and 
-                    self.continuous_monitor.alert_consumer and 
-                    self.continuous_monitor.alert_consumer.alert_repository):
-                    alerts_list = self.continuous_monitor.alert_consumer.alert_repository.get_active_alerts()
-                    return {
-                        "alerts": alerts_list,
-                        "total": len(alerts_list),
-                        "timestamp": datetime.now().isoformat()
-                    }
-                else:
-                    return {"alerts": [], "total": 0, "timestamp": datetime.now().isoformat()}
-            
-            def get_recent_predictions(self):
-                return {"predictions": [], "total": 0, "timestamp": datetime.now().isoformat()}
-            
-            def shutdown(self):
-                pass
+        logger.info("Initializing Crop Disease Service with Spark Streaming...")
         
-        # Initialize threshold-based alert system
-        self.threshold_service = SimpleThresholdService()
-        self.continuous_monitor = ContinuousMonitorRefactored(self.threshold_service)
+        # Initialize Spark Streaming Alert Service
+        self.spark_service = SparkStreamingAlertService()
         
-        # Update threshold service with continuous monitor reference
-        self.threshold_service.continuous_monitor = self.continuous_monitor
+        # Initialize Alert Repository for API access
+        self.alert_repository = AlertRepository(self.spark_service.spark)
         
-        # Initialize API service
-        self.api_service = APIService(self.threshold_service)
+        # Initialize API service with direct repository access
+        self.api_service = APIService(self.alert_repository)
         
         # FastAPI app
         self.app = FastAPI(
-            title="Threshold-Based Alert Service",
-            description="Real-time Agricultural Monitoring with Threshold-Based Alerts",
-            version="1.0.0"
+            title="Spark Streaming Alert Service",
+            description="Real-time Agricultural Monitoring with Spark Streaming",
+            version="2.0.0"
         )
         
         # Add CORS middleware
@@ -102,55 +67,91 @@ class CropDiseaseServiceOrchestrator:
         
         @self.app.get("/monitor/status")
         async def get_monitor_status():
-            """Get continuous monitor status"""
-            return self.continuous_monitor.get_status()
-        
-        @self.app.post("/monitor/check")
-        async def trigger_manual_check():
-            """Trigger manual alert check (for testing/debugging)"""
-            return self.continuous_monitor.trigger_manual_check()
+            """Get Spark Streaming monitor status"""
+            try:
+                return self.spark_service.get_streaming_status()
+            except Exception as e:
+                logger.error(f"Error getting monitor status: {e}")
+                return {
+                    "error": str(e),
+                    "is_running": False,
+                    "timestamp": datetime.now().isoformat()
+                }
         
         @self.app.get("/monitor/health")
         async def get_monitor_health():
             """Get monitor health check"""
-            return self.continuous_monitor.health_check()
+            try:
+                status = self.spark_service.get_streaming_status()
+                health_status = "healthy" if status["is_running"] and status["active_queries"] > 0 else "unhealthy"
+                
+                return {
+                    "status": health_status,
+                    "service": "spark-streaming-alert-service",
+                    "spark_cluster": "spark://spark-master:7077",
+                    "active_streaming_queries": status["active_queries"],
+                    "is_running": status["is_running"],
+                    "timestamp": datetime.now().isoformat()
+                }
+            except Exception as e:
+                logger.error(f"Error in health check: {e}")
+                return {
+                    "status": "unhealthy",
+                    "service": "spark-streaming-alert-service",
+                    "error": str(e),
+                    "timestamp": datetime.now().isoformat()
+                }
+        
+        @self.app.get("/health")
+        async def health_check():
+            """Basic health check endpoint"""
+            return await get_monitor_health()
         
         # Add API service routes
         self.api_service.add_routes(self.app)
     
-    def start_background_services(self):
-        """Start background services"""
-        logger.info("Starting background services...")
+    def start_services(self):
+        """Start Spark Streaming services"""
+        logger.info("Starting Spark Streaming services...")
         
-        # Start continuous monitor for threshold-based alerts
-        monitor_thread = threading.Thread(
-            target=self.continuous_monitor.start,
-            daemon=True
-        )
-        monitor_thread.start()
-        logger.info("Continuous monitor service started")
+        try:
+            # Start Spark Streaming in background
+            self.spark_service.start_streaming()
+            logger.info("Spark Streaming Alert Service started successfully")
+            
+        except Exception as e:
+            logger.error(f"Error starting Spark Streaming services: {e}")
+            raise
     
     def shutdown(self):
         """Graceful shutdown"""
         logger.info("Shutting down Crop Disease service...")
         self.is_running = False
-        self.continuous_monitor.stop()
+        
+        # Stop Spark Streaming
+        try:
+            self.spark_service.stop_streaming()
+        except Exception as e:
+            logger.error(f"Error stopping Spark service: {e}")
+        
+        logger.info("Crop Disease service shutdown completed")
 
 def main():
     """Main entry point"""
-    logger.info("Starting Crop Disease Service (Threshold-Based Alert System)...")
+    logger.info("Starting Crop Disease Service (Spark Streaming Alert System)...")
     
     # Create orchestrator
     orchestrator = CropDiseaseServiceOrchestrator()
     
-    # Start background services
-    orchestrator.start_background_services()
+    # Start Spark Streaming services
+    orchestrator.start_services()
     
     # Get configuration
     host = os.getenv("CROP_DISEASE_SERVICE_HOST", "0.0.0.0")
     port = int(os.getenv("CROP_DISEASE_SERVICE_PORT", "8000"))
     
     logger.info(f"Starting FastAPI server on {host}:{port}")
+    logger.info("Spark UI available at http://localhost:4042")
     
     try:
         # Start FastAPI server

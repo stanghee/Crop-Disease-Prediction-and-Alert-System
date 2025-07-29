@@ -102,6 +102,52 @@ class AlertRepository:
         """Save a single alert to database"""
         return self.save_alerts([alert])
     
+    def get_historical_alerts(self, days_back: int = 7, zone_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get historical alerts for Data Insights"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            
+            base_query = """
+                SELECT 
+                    id,
+                    zone_id,
+                    alert_timestamp,
+                    alert_type,
+                    severity,
+                    message,
+                    status,
+                    created_at
+                FROM alerts 
+                WHERE alert_timestamp >= NOW() - INTERVAL '%s days'
+            """
+            
+            params = [days_back]
+            if zone_id:
+                base_query += " AND zone_id = %s"
+                params.append(zone_id)
+            
+            base_query += " ORDER BY alert_timestamp DESC"
+            
+            cursor.execute(base_query, params)
+            
+            alerts = []
+            for row in cursor.fetchall():
+                alert = dict(row)
+                alert['alert_timestamp'] = alert['alert_timestamp'].isoformat() if alert['alert_timestamp'] else None
+                alert['created_at'] = alert['created_at'].isoformat() if alert['created_at'] else None
+                alerts.append(alert)
+            
+            cursor.close()
+            conn.close()
+            
+            logger.debug(f"Retrieved {len(alerts)} historical alerts from database")
+            return alerts
+            
+        except Exception as e:
+            logger.error(f"Error retrieving historical alerts: {e}")
+            return []
+
     def get_active_alerts(self, limit: int = 100, zone_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Get active alerts from database
@@ -241,6 +287,108 @@ class AlertRepository:
                 'timestamp': datetime.now().isoformat()
             }
     
+    def get_ml_predictions(self, days_back: int = 7, field_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get ML predictions for Data Insights"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            
+            base_query = """
+                SELECT 
+                    id,
+                    field_id,
+                    location,
+                    prediction_timestamp,
+                    anomaly_score,
+                    is_anomaly,
+                    severity,
+                    recommendations,
+                    model_version,
+                    features,
+                    created_at
+                FROM ml_predictions 
+                WHERE prediction_timestamp >= NOW() - INTERVAL '%s days'
+            """
+            
+            params = [days_back]
+            if field_id:
+                base_query += " AND field_id = %s"
+                params.append(field_id)
+            
+            base_query += " ORDER BY prediction_timestamp DESC"
+            
+            cursor.execute(base_query, params)
+            
+            predictions = []
+            for row in cursor.fetchall():
+                prediction = dict(row)
+                prediction['prediction_timestamp'] = prediction['prediction_timestamp'].isoformat() if prediction['prediction_timestamp'] else None
+                prediction['created_at'] = prediction['created_at'].isoformat() if prediction['created_at'] else None
+                predictions.append(prediction)
+            
+            cursor.close()
+            conn.close()
+            
+            logger.debug(f"Retrieved {len(predictions)} ML predictions from database")
+            return predictions
+            
+        except Exception as e:
+            logger.error(f"Error retrieving ML predictions: {e}")
+            return []
+
+    def get_ml_statistics(self) -> Dict[str, Any]:
+        """Get ML prediction statistics for Data Insights"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Get counts by field and severity
+            cursor.execute("""
+                SELECT 
+                    field_id,
+                    severity,
+                    is_anomaly,
+                    COUNT(*) as count,
+                    AVG(anomaly_score) as avg_anomaly_score
+                FROM ml_predictions
+                WHERE prediction_timestamp >= NOW() - INTERVAL '7 days'
+                GROUP BY field_id, severity, is_anomaly
+                ORDER BY field_id, severity
+            """)
+            
+            stats_data = cursor.fetchall()
+            
+            # Get feature statistics
+            cursor.execute("""
+                SELECT 
+                    field_id,
+                    AVG(anomaly_score) as avg_anomaly_score,
+                    COUNT(*) as total_predictions,
+                    SUM(CASE WHEN is_anomaly THEN 1 ELSE 0 END) as anomaly_count
+                FROM ml_predictions
+                WHERE prediction_timestamp >= NOW() - INTERVAL '7 days'
+                GROUP BY field_id
+                ORDER BY field_id
+            """)
+            
+            field_stats = cursor.fetchall()
+            
+            cursor.close()
+            conn.close()
+            
+            return {
+                'statistics_by_field': [dict(row) for row in stats_data],
+                'field_summary': [dict(row) for row in field_stats],
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting ML statistics: {e}")
+            return {
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
+
     def cleanup_old_alerts(self, days_old: int = 30) -> int:
         """Clean up old alerts from database"""
         try:
