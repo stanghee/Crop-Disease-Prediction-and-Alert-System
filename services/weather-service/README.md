@@ -21,7 +21,7 @@ The Weather Service operates as a critical data source collecting real-time mete
 
 ### Data Flow
 
-![Weather Service Data Flow](Images/weather_data_flow.png)
+![Weather Service Data Flow](../Images/weather_data_flow.png)
 
 ## Data Schema
 
