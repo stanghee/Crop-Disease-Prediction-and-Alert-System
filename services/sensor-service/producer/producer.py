@@ -90,10 +90,10 @@ def generate_sensor_data(timestamp, field_id, config):
 
 # === REAL-TIME LOOP ===
 def main():
-    logger.info(f"✅ Sensor simulation started with timezone {TIMEZONE}")
-    logger.info(f"🎯 Anomaly probability: {ANOMALY_PROB:.3f} ({ANOMALY_PROB*100:.1f}%)")
-    logger.info(f"📍 Location: Verona")
-    logger.info("📡 CTRL+C to stop...\n")
+    logger.info(f"Sensor simulation started with timezone {TIMEZONE}")
+    logger.info(f"Anomaly probability: {ANOMALY_PROB:.3f} ({ANOMALY_PROB*100:.1f}%)")
+    logger.info(f"Location: Verona")
+    logger.info("CTRL+C to stop...\n")
     
     while True:
         try:
