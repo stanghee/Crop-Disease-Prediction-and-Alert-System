@@ -25,7 +25,7 @@ The Satellite Service operates as a critical data source acquiring satellite ima
 
 ### Data Flow
 
-![Satellite Service Data Flow](Crop-Disease-Prediction-and-Alert-System/services/Images/satellite_data_flow.png)
+![Satellite Service Data Flow](../Images/satellite_data_flow.png)
 
 ## Data Schema
 
