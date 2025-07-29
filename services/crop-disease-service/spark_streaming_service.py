@@ -28,7 +28,8 @@ class SparkStreamingAlertService:
         self.streaming_queries = []
         self.is_running = False
         logger.info("✅ Service initialized")
-        
+
+#TODO: fix the env variables, we should use the env variables from the docker-compose.yml file     
     def _create_spark_session(self) -> SparkSession:
         """Create Spark session with Kafka support"""
         spark_master_url = os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
