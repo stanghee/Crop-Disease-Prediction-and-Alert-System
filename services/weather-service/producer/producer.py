@@ -77,7 +77,8 @@ def prepare_raw_data(data):
             "humidity": curr.get('humidity'),
             "wind_kph": curr.get('wind_kph'),
             "condition": curr.get('condition', {}).get('text'),
-            "uv": curr.get('uv')
+            "uv": curr.get('uv'),
+            "precip_mm": curr.get('precip_mm')
         }
 
     except Exception as e:

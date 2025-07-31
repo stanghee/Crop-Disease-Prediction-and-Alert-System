@@ -49,7 +49,8 @@ class MainDataLakeService:
         spark_master_url = os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
         driver_host = os.getenv("SPARK_DRIVER_HOST", "spark-data-lake-service")
         driver_port = os.getenv("SPARK_DRIVER_PORT", "4040")
-        
+ 
+#TODO: clean this config
         return SparkSession.builder \
             .appName("CropDiseaseDataLake") \
             .master(spark_master_url) \
@@ -173,7 +174,8 @@ class MainDataLakeService:
         except Exception as e:
             logger.error(f"Error in Gold processing: {e}")
             return {"error": str(e), "timestamp": datetime.now().isoformat()}
-    
+
+ #TODO: check if we need to change this   
     def get_dashboard_summary(self) -> Dict[str, Any]:
         """
         Get dashboard summary with all metrics

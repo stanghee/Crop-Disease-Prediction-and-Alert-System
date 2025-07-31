@@ -34,17 +34,23 @@ FIELD_CONFIG = {
     "field_01": {
         "temperature": {"dist": "gauss", "mean": 24, "std": 2},
         "humidity": {"dist": "uniform", "low": 50, "high": 80},
-        "soil_ph": {"dist": "gauss", "mean": 6.5, "std": 0.15}
+        "soil_ph": {"dist": "gauss", "mean": 6.5, "std": 0.15},
+        "latitude": 45.270000,  
+        "longitude": 10.900000
     },
     "field_02": {
         "temperature": {"dist": "gauss", "mean": 28, "std": 1.5},
         "humidity": {"dist": "uniform", "low": 40, "high": 70},
-        "soil_ph": {"dist": "gauss", "mean": 6.8, "std": 0.1}
+        "soil_ph": {"dist": "gauss", "mean": 6.8, "std": 0.1},
+        "latitude": 45.275000,  
+        "longitude": 10.905000
     },
     "field_03": {
         "temperature": {"dist": "gauss", "mean": 22, "std": 2.5},
         "humidity": {"dist": "uniform", "low": 60, "high": 90},
-        "soil_ph": {"dist": "gauss", "mean": 6.3, "std": 0.2}
+        "soil_ph": {"dist": "gauss", "mean": 6.3, "std": 0.2},
+        "latitude": 45.278000,  
+        "longitude": 10.907000
     }
 }
 
@@ -73,7 +79,9 @@ def generate_sensor_data(timestamp, field_id, config):
     data = {
         "timestamp": timestamp.isoformat(), 
         "field_id": field_id,
-        "location": "Verona"  # We added this variable to aggregate data by location (sensor and weather data)
+        "location": "Verona",  # We added this variable to aggregate data by location (sensor and weather data)
+        "latitude": config["latitude"],
+        "longitude": config["longitude"]
     }
     
     for sensor in ["temperature", "humidity", "soil_ph"]:

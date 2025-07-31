@@ -39,6 +39,8 @@ class SilverZoneProcessor:
             StructField("kafka_timestamp", StringType(), True),
             StructField("kafka_topic", StringType(), True),
             StructField("location", StringType(), True),
+            StructField("latitude", DoubleType(), True),
+            StructField("longitude", DoubleType(), True),
             StructField("soil_ph", DoubleType(), True),
             StructField("temperature", DoubleType(), True),
             StructField("timestamp", StringType(), True),
@@ -61,6 +63,7 @@ class SilverZoneProcessor:
             StructField("uv", DoubleType(), True),
             StructField("wind_kph", DoubleType(), True),
             StructField("location", StringType(), True),
+            StructField("precip_mm", DoubleType(), True),
         ])
         self.satellite_schema = StructType([
             StructField("timestamp", StringType(), True),
@@ -108,7 +111,7 @@ class SilverZoneProcessor:
             return self.satellite_schema
         else:
             raise ValueError(f"Unknown data type: {data_type}")
-    
+
     def start_sensor_stream(self):
         """
         Structured Streaming: process IoT sensor data from Bronze to Silver in real-time.
@@ -145,7 +148,8 @@ class SilverZoneProcessor:
                 .withColumn("temperature_valid", when((col("temperature") >= -20) & (col("temperature") <= 60), True).otherwise(False)) \
                 .withColumn("humidity_valid", when((col("humidity") >= 0) & (col("humidity") <= 100), True).otherwise(False)) \
                 .withColumn("ph_valid", when((col("soil_ph") >= 3.0) & (col("soil_ph") <= 9.0), True).otherwise(False)) \
-                .filter(col("temperature_valid") & col("humidity_valid") & col("ph_valid"))
+                .withColumn("coordinates_valid", when(col("latitude").isNotNull() & col("longitude").isNotNull() & (col("latitude") >= -90) & (col("latitude") <= 90) & (col("longitude") >= -180) & (col("longitude") <= 180), True).otherwise(False)) \
+                .filter(col("temperature_valid") & col("humidity_valid") & col("ph_valid") & col("coordinates_valid"))
             
             # Write to Silver zone (Parquet)
             silver_query = silver_stream.writeStream \
@@ -162,12 +166,15 @@ class SilverZoneProcessor:
                 to_json(struct(
                     col("field_id"),
                     col("location"),
+                    col("latitude"),
+                    col("longitude"),
                     col("temperature"),
                     col("humidity"),
                     col("soil_ph"),
                     col("temperature_valid"),
                     col("humidity_valid"),
                     col("ph_valid"),
+                    col("coordinates_valid"),
                     col("timestamp_parsed").alias("timestamp")
                 )).alias("value")
             )
@@ -186,8 +193,6 @@ class SilverZoneProcessor:
         except Exception as e:
             logger.error(f"[STREAMING] Error starting sensor Silver streaming: {e}")
             return None
-
-#TODO: add uv and condition info, and check all the variables for the weather schema
 
     def start_weather_stream(self):
         """
@@ -209,6 +214,10 @@ class SilverZoneProcessor:
                 .filter(
                     col("temp_c").isNotNull() &
                     col("humidity").isNotNull() &
+                    col("wind_kph").isNotNull() &
+                    col("uv").isNotNull() &
+                    col("precip_mm").isNotNull() &
+                    col("condition").isNotNull() &
                     col("location").isNotNull() &
                     col("timestamp").isNotNull()
                 ) \
@@ -222,8 +231,11 @@ class SilverZoneProcessor:
                 .withColumn("year", year(col("timestamp_parsed"))) \
                 .withColumn("temp_valid", when((col("temp_c") >= -50) & (col("temp_c") <= 60), True).otherwise(False)) \
                 .withColumn("humidity_valid", when((col("humidity") >= 0) & (col("humidity") <= 100), True).otherwise(False)) \
+                .withColumn("wind_valid", when((col("wind_kph") >= 0) & (col("wind_kph") <= 500), True).otherwise(False)) \
+                .withColumn("uv_valid", when((col("uv") >= 0) & (col("uv") <= 20), True).otherwise(False)) \
+                .withColumn("precip_valid", when((col("precip_mm") >= 0) & (col("precip_mm") <= 1000), True).otherwise(False)) \
                 .withColumn("coordinates_valid", when(col("lat").isNotNull() & col("lon").isNotNull() & (col("lat") >= -90) & (col("lat") <= 90) & (col("lon") >= -180) & (col("lon") <= 180), True).otherwise(False)) \
-                .filter(col("temp_valid") & col("humidity_valid") & col("coordinates_valid"))
+                .filter(col("temp_valid") & col("humidity_valid") & col("wind_valid") & col("uv_valid") & col("precip_valid") & col("coordinates_valid"))
             
             # Write to Silver zone (Parquet)
             silver_query = silver_stream.writeStream \
@@ -242,8 +254,14 @@ class SilverZoneProcessor:
                     col("temp_c"),
                     col("humidity"),
                     col("wind_kph"),
+                    col("uv"),
+                    col("condition"),
+                    col("precip_mm"),
                     col("temp_valid"),
                     col("humidity_valid"),
+                    col("wind_valid"),
+                    col("uv_valid"),
+                    col("precip_valid"),
                     col("coordinates_valid"),
                     col("timestamp_parsed").alias("timestamp")
                 )).alias("value")

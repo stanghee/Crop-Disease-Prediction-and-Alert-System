@@ -44,6 +44,8 @@ class BronzeZoneProcessor:
             StructField("timestamp", StringType(), True),
             StructField("field_id", StringType(), True),
             StructField("location", StringType(), True),
+            StructField("latitude", DoubleType(), True),
+            StructField("longitude", DoubleType(), True),
             StructField("temperature", DoubleType(), True),
             StructField("humidity", DoubleType(), True),
             StructField("soil_ph", DoubleType(), True)
@@ -63,7 +65,7 @@ class BronzeZoneProcessor:
         bronze_df = kafka_df.select(
             # Parse the JSON value
             from_json(col("value").cast("string"), sensor_schema).alias("data"),
-            # Kafka metadata
+            # Kafka metadata added 
             col("topic").alias("kafka_topic"),
             col("partition").alias("kafka_partition"),
             col("offset").alias("kafka_offset"),
@@ -122,7 +124,8 @@ class BronzeZoneProcessor:
             StructField("humidity", IntegerType(), True),
             StructField("wind_kph", DoubleType(), True),
             StructField("condition", StringType(), True),
-            StructField("uv", DoubleType(), True)
+            StructField("uv", DoubleType(), True),
+            StructField("precip_mm", DoubleType(), True)
         ])
         
         # Read from Kafka

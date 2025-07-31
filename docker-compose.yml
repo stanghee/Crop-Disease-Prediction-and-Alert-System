@@ -254,6 +254,7 @@ services:
       # Data lake paths (override default s3a URIs used in code)
       BRONZE_PATH: s3a://bronze/
       SILVER_PATH: s3a://silver/
+      GOLD_PATH: s3a://gold/
     ports:
       - "4040:4040"  # Spark UI
     command: ["python", "main_service.py"]
