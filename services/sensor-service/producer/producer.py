@@ -24,12 +24,12 @@ producer = KafkaProducer(
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
 )
 
-# === CONFIGURATION PARAMETERS ===
+# CONFIGURATION PARAMETERS 
 random.seed(42)
 # Configurable probability for anomalies (default 0.1% = 0.001)
-ANOMALY_PROB = float(os.getenv("ANOMALY_PROBABILITY", "0.001")) 
+ANOMALY_PROB = float(os.getenv("ANOMALY_PROBABILITY", "0.001")) # We set an higher probability for anomalies to simulate extreme conditions
 
-# === SENSOR CONFIGURATION FOR EACH FIELD ===
+# SENSOR CONFIGURATION FOR EACH FIELD 
 FIELD_CONFIG = {
     "field_01": {
         "temperature": {"dist": "gauss", "mean": 24, "std": 2},
@@ -49,7 +49,7 @@ FIELD_CONFIG = {
 }
 
 
-# === HELPER FUNCTIONS ===
+# HELPER FUNCTIONS 
 def generate_value(config):
     if config["dist"] == "gauss":
         return round(random.gauss(config["mean"], config["std"]), 2)
@@ -59,7 +59,7 @@ def generate_value(config):
         raise ValueError("Unsupported distribution")
 
 def inject_anomaly(sensor_type, value):
-    """Inject anomalous values to simulate malfunctions or extreme conditions"""
+    """Inject anomalous values to simulate extreme conditions"""
     if sensor_type == "temperature":
         return round(value + random.choice([-10, 10]), 2)
     elif sensor_type == "humidity":
@@ -73,13 +73,13 @@ def generate_sensor_data(timestamp, field_id, config):
     data = {
         "timestamp": timestamp.isoformat(), 
         "field_id": field_id,
-        "location": "Verona"  # Aggiunta della variabile location
+        "location": "Verona"  # We added this variable to aggregate data by location (sensor and weather data)
     }
     
     for sensor in ["temperature", "humidity", "soil_ph"]:
         value = generate_value(config[sensor])
         
-        # Generate anomaly with configurable probability
+        # Generate anomaly with configurable probability (high value for the demo/test phase)
         if random.random() < ANOMALY_PROB:
             value = inject_anomaly(sensor, value)
             logger.debug(f"🔴 Anomaly generated for {sensor} in {field_id}: {value}")
@@ -88,7 +88,7 @@ def generate_sensor_data(timestamp, field_id, config):
     
     return data
 
-# === REAL-TIME LOOP ===
+# REAL-TIME LOOP  
 def main():
     logger.info(f"Sensor simulation started with timezone {TIMEZONE}")
     logger.info(f"Anomaly probability: {ANOMALY_PROB:.3f} ({ANOMALY_PROB*100:.1f}%)")
@@ -100,12 +100,12 @@ def main():
             now = datetime.now(ZoneInfo(TIMEZONE))
             for field_id, config in deepcopy(FIELD_CONFIG).items():
                 data = generate_sensor_data(now, field_id, config)
-                producer.send("sensor_data", data)  # send to Kafka topic
+                producer.send("sensor_data", data)  # send to Kafka topic sensor_data 
                 logger.info(f"✅ Sent to Kafka: {data}")
             time.sleep(60)
         except Exception as e:
             logger.error(f"❌ Error sending data: {e}")
-            time.sleep(5)  # Wait before retrying
+            time.sleep(5)  # Wait 5 sec before retrying
 
 if __name__ == "__main__":
     main()

@@ -10,7 +10,7 @@ for i in range(60):
             print(f"✅ Kafka disponibile su {host}:{port}")
             break
     except OSError:
-        print(f"⏳ Attesa Kafka... ({i+1}/60)")
+        print(f" Attesa Kafka... ({i+1}/60)")
         time.sleep(1)
 else:
     raise Exception("❌ Kafka non disponibile") 

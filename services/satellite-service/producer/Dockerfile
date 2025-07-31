@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Imposta le variabili d'ambiente per ottimizzare Python
+# Set environment variables to optimize Python
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Installa solo le dipendenze di sistema necessarie
+# Install only necessary system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     gcc \
@@ -16,19 +16,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Copia e installa le dipendenze Python
+# Copy and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
     && rm -rf ~/.cache/pip/*
 
-# Copia solo i file necessari
+# Copy only necessary files
 COPY producer.py .
 COPY wait_for_kafka.py .
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
 
-# Utente non-root per sicurezza
+# Non-root user for security
 RUN useradd -m appuser && chown -R appuser /app
 USER appuser
 
-CMD ["/entrypoint.sh"]
+CMD ["./entrypoint.sh"]

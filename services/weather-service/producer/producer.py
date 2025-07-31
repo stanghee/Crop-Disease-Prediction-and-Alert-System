@@ -10,10 +10,10 @@ from dotenv import load_dotenv
 import sys
 from zoneinfo import ZoneInfo
 
-# === Load environment variables ===
+# Load environment variables 
 load_dotenv()
 
-API_KEY = os.getenv("API_KEY")
+API_KEY = os.getenv("API_KEY") # from .env file
 API_URL = "https://api.weatherapi.com/v1/current.json"
 DEFAULT_LOCATION = os.getenv("DEFAULT_LOCATION", "Verona")
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
@@ -26,9 +26,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-logger.info(f"🚀 Weather producer starting up with timezone {TIMEZONE}...")
+logger.info(f" Weather producer starting up with timezone {TIMEZONE}...")
 
-# === Check API_KEY ===
+# Check API_KEY
 if not API_KEY:
     logger.error("❌ API_KEY not found! Make sure it's present in the .env file or environment variables.")
     sys.exit(1)
@@ -56,7 +56,7 @@ def fetch_weather_data(location):
         return None
 
 def prepare_raw_data(data):
-    """Prepare raw data without validation - validation will be done in Flink"""
+    """Prepare raw data without validation - validation will be done in Spark"""
     try:
         # Use current timestamp with local timezone
         current_timestamp = datetime.now(ZoneInfo(TIMEZONE))
@@ -94,15 +94,10 @@ while True:
             producer.send('weather_data', value=prepared_data)
             producer.flush()  # Ensure message is sent immediately
         else:
-            logger.warning("⛔ Error preparing data.")
+            logger.warning(" Error preparing data.")
     else:
         logger.error("❌ No data received from API. Check API key, network connection, or API limits.")
     time.sleep(60)
-
-
-
-
-
 
 
 
