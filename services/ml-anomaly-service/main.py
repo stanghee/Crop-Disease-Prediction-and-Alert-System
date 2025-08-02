@@ -277,6 +277,7 @@ class MLAnomalyService:
     def start_scheduled_training(self):
         """Start scheduled training job"""
         # Schedule daily training at 2 AM
+        # TODO: change this part 
         schedule.every().day.at("02:00").do(lambda: self._train_and_reload(30))
         
         def run_schedule():
@@ -288,11 +289,13 @@ class MLAnomalyService:
         schedule_thread.start()
         logger.info("Scheduled training started (daily at 2 AM)")
     
+    # The train at the start of the service is used for the demo, in production the first train should be done after a certain amount of data avaiable / or time 
     def initial_setup(self):
         """Initial setup - train model and start inference"""
         logger.info("Performing initial setup...")
         
         # Try to train initial model
+        # TODO: change this part to force it to train after 5 minutes (for the demo phase)
         result = self.trainer.manual_retrain()
         
         if result['status'] == 'success':

@@ -78,6 +78,8 @@ class PostgresClient:
             # Convert Spark Row objects to dicts
             records = []
             for row in predictions:
+                # Debug log per vedere i valori ricevuti
+                logger.debug(f"Processing row: field_id={row.field_id}, sensor_anomaly_rate={row.sensor_anomaly_rate}, weather_avg_uv_index={getattr(row, 'weather_avg_uv_index', 'NOT_FOUND')}, temporal_feature_ml_sin={getattr(row, 'temporal_feature_ml_sin', 'NOT_FOUND')}")
                 record = {
                     'timestamp': row.processing_timestamp,
                     'field_id': row.field_id,
@@ -88,12 +90,16 @@ class PostgresClient:
                     'recommendations': row.recommendations if hasattr(row, 'recommendations') else None,
                     'model_version': row.model_version,
                     'features': json.dumps({
-                        'temperature': float(row.sensor_avg_temperature) if row.sensor_avg_temperature else None,
-                        'humidity': float(row.sensor_avg_humidity) if row.sensor_avg_humidity else None,
-                        'soil_ph': float(row.sensor_avg_soil_ph) if row.sensor_avg_soil_ph else None,
-                        'temp_differential': float(row.temp_differential) if row.temp_differential else None,
-                        'humidity_differential': float(row.humidity_differential) if row.humidity_differential else None,
-                        'sensor_anomaly_rate': float(row.sensor_anomaly_rate) if row.sensor_anomaly_rate else None
+                        'temperature': float(row.sensor_avg_temperature) if row.sensor_avg_temperature is not None else None,
+                        'humidity': float(row.sensor_avg_humidity) if row.sensor_avg_humidity is not None else None,
+                        'soil_ph': float(row.sensor_avg_soil_ph) if row.sensor_avg_soil_ph is not None else None,
+                        'temp_differential': float(row.temp_differential) if row.temp_differential is not None else None,
+                        'humidity_differential': float(row.humidity_differential) if row.humidity_differential is not None else None,
+                        'sensor_anomaly_rate': float(row.sensor_anomaly_rate) if row.sensor_anomaly_rate is not None else None,
+                        'weather_avg_uv_index': float(row.weather_avg_uv_index) if row.weather_avg_uv_index is not None else None,
+                        'weather_avg_wind_speed': float(row.weather_avg_wind_speed) if row.weather_avg_wind_speed is not None else None,
+                        'temporal_feature_ml_sin': float(row.temporal_feature_ml_sin) if row.temporal_feature_ml_sin is not None else None,
+                        'temporal_feature_ml_cos': float(row.temporal_feature_ml_cos) if row.temporal_feature_ml_cos is not None else None
                     })
                 }
                 records.append(record)

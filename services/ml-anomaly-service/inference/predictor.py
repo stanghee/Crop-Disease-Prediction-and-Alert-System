@@ -4,17 +4,15 @@ Streaming Inference - Real-time anomaly detection
 Reads from Kafka gold-ml-features topic and predicts anomalies
 """
 
-#TODO: remove everithing related to sensor_anomaly_rate
+#TODO: change the threshold for sensor_anomaly_rate (now is 0.3)
 
 import logging
 import json
-import math
 from datetime import datetime
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 from pyspark.sql.functions import concat_ws
 from pyspark.sql.types import *
-import pickle
 from pyspark.ml.feature import VectorAssembler
 from pyspark.sql.types import FloatType, BooleanType, StringType
 from utils.feature_config import CORE_FEATURES, KMEANS_CONFIG, ANOMALY_DISTANCE_THRESHOLD, CRITICAL_DISTANCE_THRESHOLD
@@ -31,7 +29,7 @@ class StreamingPredictor:
         self.spark = spark
         self.model_manager = ModelManager()
         self.postgres_client = PostgresClient()
-        # Carica modello e scaler Spark ML
+        # Load model and scaler
         self.model, self.scaler, self.metadata = self.model_manager.load_latest_model(spark)
         if not self.model:
             logger.warning("No model available for inference - will load when needed")
@@ -41,7 +39,7 @@ class StreamingPredictor:
         """Start the streaming inference pipeline"""
         logger.info("Starting streaming inference pipeline")
         
-        # Reload model if needed (in case it was updated)
+        # Reload model if needed 
         self._reload_model_if_needed()
         
         # Define schema for gold-ml-features
@@ -86,46 +84,45 @@ class StreamingPredictor:
                      .withColumn("severity", lit("LOW")) \
                      .withColumn("recommendations", lit("Model not available - check training status"))
         
-        # Assembla e scala le feature
+        # Assemble and scale features
         assembler = VectorAssembler(inputCols=CORE_FEATURES, outputCol="features_vec")
         assembled_df = assembler.transform(df)
         scaled_df = self.scaler.transform(assembled_df)
         
-        # Predici cluster
+        # Predict cluster
         pred_df = self.model.transform(scaled_df)
         
-        # Ottieni i centroidi dal modello K-means
+        # Centroids
         centroids = self.model.clusterCenters()
         
-        # Calcola distanza euclidea dal centroide del cluster assegnato usando funzioni native
-        # Converte il vettore scaled_features in array per il calcolo della distanza
+        # Euclidean distance from centroid
         from pyspark.ml.linalg import Vectors
         from pyspark.sql.functions import array, sqrt, pow, when, lit
         from pyspark.ml.functions import vector_to_array
         
-        # Converti il vettore features in array
+        # Convert features to array
         pred_df = pred_df.withColumn("features_array", vector_to_array(col("scaled_features")))
         
-        # Per ogni cluster, calcola la distanza se è quello assegnato
+        # For each cluster, calculate the distance 
         distance_expr = lit(0.0)  # Default distance
         
         for cluster_id in range(len(centroids)):
             centroid = centroids[cluster_id]
             
-            # Crea l'espressione per calcolare la distanza euclidea
+            # Euclidean distance
             sum_squares = lit(0.0)
             for i, centroid_val in enumerate(centroid):
                 sum_squares = sum_squares + pow(col("features_array")[i] - lit(float(centroid_val)), 2)
             
             cluster_distance = sqrt(sum_squares)
             
-            # Se il cluster prediction è questo, usa questa distanza
+            # If the cluster prediction is this, use this distance
             distance_expr = when(col("prediction") == cluster_id, cluster_distance).otherwise(distance_expr)
         
-        # Calcola la distanza finale dal centroide
+        # Final distance from centroid
         pred_df = pred_df.withColumn("distance", distance_expr)
         
-        # Determina anomalia e severity senza UDF debug
+        # Anomaly and severity
         pred_df = pred_df.withColumn(
             "is_anomaly", col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD)
         ).withColumn(
@@ -134,7 +131,7 @@ class StreamingPredictor:
                         .when(col("distance") > lit(ANOMALY_DISTANCE_THRESHOLD * 0.5), "MEDIUM")
                         .otherwise("LOW")
         )
-        # Raccomandazioni basate sulla distanza dal centroide e valori delle features
+        # Recommendations
         pred_df = pred_df.withColumn(
             "recommendations",
             concat_ws(" | ",
@@ -165,7 +162,19 @@ class StreamingPredictor:
                 
                 # Critical environmental combinations
                 when((col("sensor_avg_temperature") > 25) & (col("sensor_avg_humidity") > 80), "High temp + humidity: Ideal pathogen conditions - apply preventive measures"),
-                when((col("sensor_avg_soil_ph") < 6.0) & (col("sensor_avg_humidity") > 70), "Acidic pH + high humidity: Risk of nutritional stress - consider fertilizers and drainage")
+                when((col("sensor_avg_soil_ph") < 6.0) & (col("sensor_avg_humidity") > 70), "Acidic pH + high humidity: Risk of nutritional stress - consider fertilizers and drainage"),
+                
+                # UV-based recommendations
+                when(col("weather_avg_uv_index") > 8, "High UV index: Protect crops from sunburn - consider shading"),
+                when(col("weather_avg_uv_index") < 3, "Low UV index: Reduced photosynthesis - monitor growth"),
+                
+                # Wind-based recommendations
+                when(col("weather_avg_wind_speed") > 30, "High wind speed: Risk of physical damage - secure structures"),
+                when(col("weather_avg_wind_speed") < 5, "Low wind speed: Poor air circulation - monitor for fungal diseases"),
+                
+                # Combined weather conditions
+                when((col("weather_avg_uv_index") > 7) & (col("weather_avg_wind_speed") > 20), "High UV + wind: Stress conditions - increase irrigation"),
+                when((col("sensor_avg_humidity") > 85) & (col("weather_avg_wind_speed") < 5), "High humidity + low wind: Fungal risk - improve ventilation")
             )
         )
         # Output finale
@@ -182,15 +191,17 @@ class StreamingPredictor:
             col("sensor_avg_soil_ph"),
             col("temp_differential"),
             col("humidity_differential"),
-            col("sensor_anomaly_rate")
+            col("sensor_anomaly_rate"),
+            col("weather_avg_uv_index"),
+            col("weather_avg_wind_speed"),
+            col("temporal_feature_ml_sin"),
+            col("temporal_feature_ml_cos")
         ).withColumn("model_version", lit(self.metadata['model_version'])) \
          .withColumn("prediction_timestamp", current_timestamp())
     
     def _write_to_kafka(self, df):
         """Write anomalies to Kafka ml-anomalies topic"""
-        # Rimuovi debug UDF per evitare problemi di serializzazione
         debug_df = df
-        # Only send anomalies to alert system
         anomaly_stream = debug_df \
             .filter(col("is_anomaly") == True) \
             .select(
@@ -242,63 +253,6 @@ class StreamingPredictor:
         
         return query
     
-    #TODO: remove this function if not needed
-    def _generate_recommendations(self, anomaly_score, temp, humidity, soil_ph, temp_diff, humidity_diff, anomaly_rate):
-        """Generate text recommendations based on anomaly score and features"""
-        
-        recommendations = []
-        
-        # Base recommendations based on anomaly score
-        if anomaly_score > 0.9:
-            recommendations.append("🚨 IMMEDIATE INTERVENTION REQUIRED")
-        elif anomaly_score > 0.7:
-            recommendations.append("⚠️ WARNING: Critical conditions detected")
-        elif anomaly_score > 0.5:
-            recommendations.append("📊 Enhanced monitoring recommended")
-        else:
-            recommendations.append("✅ Normal conditions - continue monitoring")
-        
-        # Temperature-based recommendations
-        if temp > 30:
-            recommendations.append("🌡️ High temperature: consider supplemental irrigation and shading")
-        elif temp < 10:
-            recommendations.append("❄️ Low temperature: protect crops from frost")
-        
-        # Humidity-based recommendations
-        if humidity > 85:
-            recommendations.append("💧 High humidity: fungal risk - improve ventilation and consider preventive fungicides")
-        elif humidity < 40:
-            recommendations.append("🏜️ Low humidity: increase irrigation and consider misting")
-        
-        # Soil pH recommendations
-        if soil_ph < 6.0:
-            recommendations.append("🌱 Acidic pH: consider liming to increase pH")
-        elif soil_ph > 7.5:
-            recommendations.append("🌱 Alkaline pH: consider organic acidifiers")
-        
-        # Differential-based recommendations
-        if abs(temp_diff) > 5:
-            recommendations.append("🌡️ High temperature differential: verify local microclimate and sensors")
-        
-        if abs(humidity_diff) > 15:
-            recommendations.append("💧 High humidity differential: verify irrigation and drainage")
-        
-        # Anomaly rate recommendations
-        if anomaly_rate > 0.3:
-            recommendations.append("🔧 High anomaly rate: verify sensor operation and calibration")
-        
-        # Critical combinations
-        if temp > 25 and humidity > 80:
-            recommendations.append("🦠 Ideal conditions for pathogens: apply preventive fungicides")
-        
-        if soil_ph < 6.0 and humidity > 70:
-            recommendations.append("🌱 Nutritional stress + humidity: consider fertilizers and drainage")
-        
-        # Join recommendations
-        if len(recommendations) > 1:
-            return " | ".join(recommendations)
-        else:
-            return recommendations[0] if recommendations else "No specific recommendations"
     
     def _get_gold_schema(self):
         """Get schema for gold-ml-features"""
@@ -306,20 +260,16 @@ class StreamingPredictor:
             StructField("field_id", StringType()),
             StructField("location", StringType()),
             StructField("sensor_avg_temperature", DoubleType()),
-            StructField("sensor_std_temperature", DoubleType()),
             StructField("sensor_avg_humidity", DoubleType()),
-            StructField("sensor_std_humidity", DoubleType()),
             StructField("sensor_avg_soil_ph", DoubleType()),
-            StructField("sensor_std_soil_ph", DoubleType()),
-            StructField("weather_avg_temperature", DoubleType()),
-            StructField("weather_avg_humidity", DoubleType()),
             StructField("temp_differential", DoubleType()),
             StructField("humidity_differential", DoubleType()),
             StructField("sensor_anomaly_rate", DoubleType()),
-            StructField("environmental_stress_score", StringType()),
-            StructField("combined_risk_score", StringType()),
+            StructField("weather_avg_uv_index", DoubleType()),
+            StructField("weather_avg_wind_speed", DoubleType()),
+            StructField("temporal_feature_ml_sin", DoubleType()),
+            StructField("temporal_feature_ml_cos", DoubleType()),
             StructField("processing_timestamp", TimestampType()),
-            # Add other fields as needed
         ])
     
     def _reload_model_if_needed(self):

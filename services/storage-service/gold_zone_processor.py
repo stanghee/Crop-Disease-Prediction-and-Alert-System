@@ -95,7 +95,10 @@ class GoldZoneProcessor:
                     
                     # Timestamp metrics
                     max("timestamp_parsed").alias("sensor_last_reading"),
-                    min("timestamp_parsed").alias("sensor_first_reading")
+                    min("timestamp_parsed").alias("sensor_first_reading"),
+                    
+                    # Temporal features from silver
+                    mode("month").alias("sensor_dominant_month")
                 ) \
                 .withColumn(
                     "sensor_temp_range", col("sensor_max_temperature") - col("sensor_min_temperature")
@@ -147,6 +150,13 @@ class GoldZoneProcessor:
                     min("uv").alias("weather_min_uv_index"),
                     max("uv").alias("weather_max_uv_index"),
                     
+                    # Precipitation metrics (added from silver)
+                    avg("precip_mm").alias("weather_avg_precipitation"),
+                    stddev("precip_mm").alias("weather_std_precipitation"),
+                    min("precip_mm").alias("weather_min_precipitation"),
+                    max("precip_mm").alias("weather_max_precipitation"),
+                    sum("precip_mm").alias("weather_total_precipitation"),
+                    
                     # Condition metrics
                     mode("condition").alias("weather_dominant_condition"),
                     count("*").alias("weather_readings_count"),
@@ -166,7 +176,10 @@ class GoldZoneProcessor:
                 ) \
                 .withColumn(
                     "weather_uv_range", col("weather_max_uv_index") - col("weather_min_uv_index")
-                )
+                ) \
+                .withColumn(
+                    "weather_precip_range", col("weather_max_precipitation") - col("weather_min_precipitation")
+                ) 
             
             # Join sensor and weather data by location
             ml_features = sensor_aggregated \
@@ -199,6 +212,13 @@ class GoldZoneProcessor:
                 ) \
                 .withColumn(
                     "window_duration_minutes", lit(self.sliding_window_minutes)
+                ) \
+                .withColumn(
+                    # Temporal cyclic features for month (sin and cos) - using sensor dominant month
+                    "temporal_feature_ml_sin", sin(2 * pi() * (col("sensor_dominant_month") - 1) / 12)
+                ) \
+                .withColumn(
+                    "temporal_feature_ml_cos", cos(2 * pi() * (col("sensor_dominant_month") - 1) / 12)
                 )
             
             # Ensure we have exactly 3 records (one per field)
@@ -241,6 +261,7 @@ class GoldZoneProcessor:
                     col("sensor_anomaly_count"),
                     col("sensor_anomaly_rate"),
                     col("sensor_data_quality_score"),
+                    col("sensor_dominant_month"),
                     col("weather_avg_temperature"),
                     col("weather_std_temperature"),
                     col("weather_min_temperature"),
@@ -261,12 +282,20 @@ class GoldZoneProcessor:
                     col("weather_min_uv_index"),
                     col("weather_max_uv_index"),
                     col("weather_uv_range"),
+                    col("weather_avg_precipitation"),
+                    col("weather_std_precipitation"),
+                    col("weather_min_precipitation"),
+                    col("weather_max_precipitation"),
+                    col("weather_precip_range"),
+                    col("weather_total_precipitation"),
                     col("weather_dominant_condition"),
                     col("weather_readings_count"),
                     col("temp_differential"),
                     col("humidity_differential"),
                     col("sensor_data_freshness_minutes"),
                     col("weather_data_freshness_minutes"),
+                    col("temporal_feature_ml_sin"),
+                    col("temporal_feature_ml_cos"),
                     col("processing_timestamp"),
                     col("window_start_time"),
                     col("window_end_time"),

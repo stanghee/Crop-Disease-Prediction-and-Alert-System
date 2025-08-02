@@ -188,10 +188,10 @@ class MainDataLakeService:
         
         try:
             # Run ML features processing with sliding window
-            results = self.gold_processor.run_ml_features_processing()
+            results = self.gold_processor.create_ml_features_sliding_window()
             
-            logger.info(f"ML features processing completed: {results}")
-            return results
+            logger.info(f"ML features processing completed successfully")
+            return {"status": "success", "timestamp": datetime.now().isoformat()}
             
         except Exception as e:
             logger.error(f"Error in Gold processing: {e}")

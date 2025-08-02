@@ -3,14 +3,19 @@
 Feature configuration for ML anomaly detection
 Simple core features as requested
 """
-
+#TODO: check if sensor anomaly rate is usefull 
 # Core features for anomaly detection
 CORE_FEATURES = [
     'sensor_avg_temperature',
     'sensor_avg_humidity', 
     'sensor_avg_soil_ph',
     'temp_differential',      # sensor vs weather temperature difference
-    'humidity_differential'   # sensor vs weather humidity difference
+    'humidity_differential',  # sensor vs weather humidity difference
+    'sensor_anomaly_rate',    # sensor anomaly rate
+    'weather_avg_uv_index',   # UV index from weather data
+    'weather_avg_wind_speed', # wind speed from weather data
+    'temporal_feature_ml_sin', # cyclic month feature (sin)
+    'temporal_feature_ml_cos'  # cyclic month feature (cos)
 ] 
 
 # Model configuration for KMeans
@@ -24,7 +29,3 @@ KMEANS_CONFIG = {
 # Le distanze tipiche con 5 features scalate sono nell'ordine di 1-3 per punti normali
 ANOMALY_DISTANCE_THRESHOLD = 2.5   # Distanza > 2.5 = anomalia
 CRITICAL_DISTANCE_THRESHOLD = 4.0  # Distanza > 4.0 = criticità
-
-# Processing configuration  
-BATCH_INTERVAL_SECONDS = 30   # Process every 30 seconds
-WATERMARK_DURATION = "5 minutes"
