@@ -46,34 +46,56 @@ class MainDataLakeService:
         
     def _create_spark_session(self) -> SparkSession:
         """Create Spark session with S3 and Kafka support - Connected to Spark Cluster"""
+        # Environment variables with defaults
         spark_master_url = os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
         driver_host = os.getenv("SPARK_DRIVER_HOST", "spark-data-lake-service")
         driver_port = os.getenv("SPARK_DRIVER_PORT", "4040")
- 
-#TODO: clean this config
-        return SparkSession.builder \
+        driver_memory = os.getenv("SPARK_DRIVER_MEMORY", "1g")
+        executor_memory = os.getenv("SPARK_EXECUTOR_MEMORY", "1g")
+        executor_cores = os.getenv("SPARK_EXECUTOR_CORES", "2")
+        cores_max = os.getenv("SPARK_CORES_MAX", "2")
+        
+        # Required JARs for S3 and Kafka integration
+        jars = [
+            "/opt/spark/jars/hadoop-aws-3.3.4.jar",
+            "/opt/spark/jars/aws-java-sdk-bundle-1.12.367.jar",
+            "/opt/spark/jars/spark-sql-kafka-0-10_2.12-3.5.0.jar",
+            "/opt/spark/jars/kafka-clients-3.4.1.jar",
+            "/opt/spark/jars/spark-token-provider-kafka-0-10_2.12-3.5.0.jar",
+            "/opt/spark/jars/commons-pool2-2.11.1.jar"
+        ]
+        
+        # Build Spark session
+        spark_builder = SparkSession.builder \
             .appName("CropDiseaseDataLake") \
-            .master(spark_master_url) \
-            .config("spark.driver.host", driver_host) \
-            .config("spark.driver.port", driver_port) \
-            .config("spark.driver.bindAddress", "0.0.0.0") \
-            .config("spark.driver.memory", "1g") \
-            .config("spark.executor.memory", "1g") \
-            .config("spark.executor.cores", "1") \
-            .config("spark.cores.max", os.getenv("SPARK_CORES_MAX", "2")) \
+            .master(spark_master_url)
+        
+        # Add cluster-specific configurations only if using cluster
+        if spark_master_url.startswith("spark://"):
+            spark_builder = spark_builder \
+                .config("spark.driver.host", driver_host) \
+                .config("spark.driver.port", driver_port) \
+                .config("spark.driver.bindAddress", "0.0.0.0") \
+                .config("spark.cores.max", cores_max)
+        
+        # Configure Spark with environment variables
+        return spark_builder \
+            .config("spark.driver.memory", driver_memory) \
+            .config("spark.executor.memory", executor_memory) \
+            .config("spark.executor.cores", executor_cores) \
             .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
             .config("spark.sql.adaptive.enabled", "true") \
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
             .config("spark.sql.session.timeZone", "Europe/Rome") \
+            .config("spark.sql.streaming.checkpointLocation", "/tmp/spark-checkpoints") \
+            .config("spark.sql.warehouse.dir", "s3a://gold/warehouse/") \
+            .config("spark.jars", ",".join(jars)) \
             .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000") \
             .config("spark.hadoop.fs.s3a.access.key", "minioadmin") \
             .config("spark.hadoop.fs.s3a.secret.key", "minioadmin") \
             .config("spark.hadoop.fs.s3a.path.style.access", "true") \
             .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
             .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false") \
-            .config("spark.sql.streaming.checkpointLocation", "/tmp/spark-checkpoints") \
-            .config("spark.sql.warehouse.dir", "s3a://gold/warehouse/") \
-            .config("spark.jars", "/opt/spark/jars/hadoop-aws-3.3.4.jar,/opt/spark/jars/aws-java-sdk-bundle-1.12.367.jar,/opt/spark/jars/spark-sql-kafka-0-10_2.12-3.5.0.jar,/opt/spark/jars/kafka-clients-3.4.1.jar,/opt/spark/jars/spark-token-provider-kafka-0-10_2.12-3.5.0.jar,/opt/spark/jars/commons-pool2-2.11.1.jar") \
             .getOrCreate()
     
     def _create_minio_client(self) -> Minio:
@@ -174,18 +196,7 @@ class MainDataLakeService:
         except Exception as e:
             logger.error(f"Error in Gold processing: {e}")
             return {"error": str(e), "timestamp": datetime.now().isoformat()}
-
- #TODO: check if we need to change this   
-    def get_dashboard_summary(self) -> Dict[str, Any]:
-        """
-        Get dashboard summary with all metrics
-        """
-        try:
-            return self.gold_processor.get_dashboard_summary()
-        except Exception as e:
-            logger.error(f"Error getting dashboard summary: {e}")
-            return {"error": str(e)}
-    
+ 
     def get_system_status(self) -> Dict[str, Any]:
         """Get overall system status"""
         # Get actual active streams from Spark
@@ -199,17 +210,6 @@ class MainDataLakeService:
             "spark_app_id": self.spark.sparkContext.applicationId,
             "spark_app_name": self.spark.sparkContext.appName
         }
-        
-        # Gold processor status
-        try:
-            status["gold_processor"] = "available"
-            # Add last processing info if available
-            dashboard_summary = self.get_dashboard_summary()
-            if "error" not in dashboard_summary:
-                status["gold_last_processed"] = dashboard_summary.get("generated_at", "unknown")
-        except Exception as e:
-            logger.error(f"Error getting Gold processor status: {e}")
-            status["error"] = str(e)
         
         return status
     
