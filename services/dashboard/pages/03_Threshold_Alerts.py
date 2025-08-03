@@ -43,6 +43,7 @@ def get_all_latest_alerts(r: redis.Redis) -> Dict[str, Dict]:
 
 # Streamlit UI
 st.title("Threshold Alerts - Real-time Monitoring")
+st.markdown("*Monitor and manage real-time alerts for sensor anomalies and weather conditions*")
 
 redis_client = get_redis_client()
 
@@ -54,27 +55,70 @@ st_autorefresh()
 st.experimental_set_query_params()
 
 # Sidebar for zone selection and filters
-st.sidebar.header("Filter by Zone")
-zone_ids = get_available_zone_ids(redis_client)
+st.sidebar.header("Filter Settings")
 
-if not zone_ids:
-    st.info("No active alerts available in Redis.")
-    st.stop()
+# Field filters with expander and checkboxes
+with st.sidebar.expander("🌾 Field Selection", expanded=True):
+    # Checkbox for "All fields"
+    show_all_fields = st.checkbox("All fields", value=True, key="all_fields_alerts")
+    
+    # Individual field checkboxes
+    field_01 = st.checkbox("Field 01", value=True, key="field_01_alerts")
+    field_02 = st.checkbox("Field 02", value=True, key="field_02_alerts")
+    field_03 = st.checkbox("Field 03", value=True, key="field_03_alerts")
+    
+    # Create selected_fields list based on checkboxes
+    if show_all_fields:
+        selected_fields = ["field_01", "field_02", "field_03"]
+    else:
+        selected_fields = []
+        if field_01:
+            selected_fields.append("field_01")
+        if field_02:
+            selected_fields.append("field_02")
+        if field_03:
+            selected_fields.append("field_03")
 
-selected_zones = st.sidebar.multiselect("Select one or more zones:", zone_ids, default=zone_ids)
+# Filter by alert type with expander and checkboxes
+with st.sidebar.expander("🚨 Alert Type Filter", expanded=True):
+    # Checkbox for "All alert types"
+    show_all_alert_types = st.checkbox("All alert types", value=True, key="all_alert_types")
+    
+    # Individual alert type checkboxes
+    sensor_anomaly = st.checkbox("SENSOR_ANOMALY", value=True, key="sensor_anomaly")
+    weather_alert = st.checkbox("WEATHER_ALERT", value=True, key="weather_alert")
+    
+    # Create selected_alert_types list based on checkboxes
+    if show_all_alert_types:
+        selected_alert_types = ["SENSOR_ANOMALY", "WEATHER_ALERT"]
+    else:
+        selected_alert_types = []
+        if sensor_anomaly:
+            selected_alert_types.append("SENSOR_ANOMALY")
+        if weather_alert:
+            selected_alert_types.append("WEATHER_ALERT")
 
-# Filter by alert type
-st.sidebar.header("Filter by Alert Type")
-alert_types = ["All", "SENSOR_ANOMALY", "WEATHER_ALERT"]
-selected_alert_type = st.sidebar.selectbox("Alert Type:", alert_types)
+# Filter by severity with expander and checkboxes
+with st.sidebar.expander("⚠️ Severity Filter", expanded=True):
+    # Checkbox for "All severities"
+    show_all_severities = st.checkbox("All severities", value=True, key="all_severities")
+    
+    # Individual severity checkboxes
+    high_severity = st.checkbox("HIGH", value=True, key="high_severity")
+    medium_severity = st.checkbox("MEDIUM", value=True, key="medium_severity")
+    
+    # Create selected_severities list based on checkboxes
+    if show_all_severities:
+        selected_severities = ["HIGH", "MEDIUM"]
+    else:
+        selected_severities = []
+        if high_severity:
+            selected_severities.append("HIGH")
+        if medium_severity:
+            selected_severities.append("MEDIUM")
 
-# Filter by severity
-st.sidebar.header("Filter by Severity")
-severities = ["All", "HIGH", "MEDIUM"]
-selected_severity = st.sidebar.selectbox("Severity:", severities)
-
-if not selected_zones:
-    st.info("Select at least one zone from the sidebar to view alerts.")
+if not selected_fields:
+    st.info("Select at least one field from the sidebar to view alerts.")
     st.stop()
 
 # Function to get colors based on severity and alert type
@@ -160,15 +204,16 @@ all_alerts = get_all_latest_alerts(redis_client)
 filtered_alerts = {}
 
 for zone_id, alert in all_alerts.items():
-    if zone_id not in selected_zones:
+    # Filter by selected fields (zone_id corresponds to field_id)
+    if zone_id not in selected_fields:
         continue
     
     # Filter by alert type
-    if selected_alert_type != "All" and alert.get('alert_type') != selected_alert_type:
+    if alert.get('alert_type') not in selected_alert_types:
         continue
     
     # Filter by severity
-    if selected_severity != "All" and alert.get('severity') != selected_severity:
+    if alert.get('severity') not in selected_severities:
         continue
     
     filtered_alerts[zone_id] = alert
