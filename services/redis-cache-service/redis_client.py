@@ -117,7 +117,7 @@ class RedisClient:
             )
             
             if result:
-                logger.debug(f"📡 Cached sensor data for field {field_id}")
+                logger.debug(f"Cached sensor data for field {field_id}")
                 return True
             return False
             
@@ -133,7 +133,7 @@ class RedisClient:
             
             if cached_data:
                 data = ujson.loads(cached_data)
-                logger.debug(f"📖 Retrieved sensor data for field {field_id}")
+                logger.debug(f"Retrieved sensor data for field {field_id}")
                 return data
             
             logger.debug(f"❌ No cached sensor data for field {field_id}")
@@ -165,7 +165,7 @@ class RedisClient:
                     field_id = key.decode('utf-8').split(':')[-1]
                     sensor_data[field_id] = ujson.loads(data)
             
-            logger.debug(f"📖 Retrieved sensor data for {len(sensor_data)} fields")
+            logger.debug(f"Retrieved sensor data for {len(sensor_data)} fields")
             return sensor_data
             
         except Exception as e:
@@ -195,7 +195,7 @@ class RedisClient:
             )
             
             if result:
-                logger.debug(f"🌦️ Cached weather data for location {location}")
+                logger.debug(f"Cached weather data for location {location}")
                 return True
             return False
             
@@ -211,7 +211,7 @@ class RedisClient:
             
             if cached_data:
                 data = ujson.loads(cached_data)
-                logger.debug(f"📖 Retrieved weather data for location {location}")
+                logger.debug(f"Retrieved weather data for location {location}")
                 return data
             
             logger.debug(f"❌ No cached weather data for location {location}")
@@ -243,14 +243,14 @@ class RedisClient:
                     location = key.decode('utf-8').split(':')[-1]
                     weather_data[location] = ujson.loads(data)
             
-            logger.debug(f"📖 Retrieved weather data for {len(weather_data)} locations")
+            logger.debug(f"Retrieved weather data for {len(weather_data)} locations")
             return weather_data
             
         except Exception as e:
             logger.error(f"❌ Error retrieving all weather data: {e}")
             return {}
     
-    # ==================== ALERTS OPERATIONS ==================== #TODO: check if this is correct
+    # ==================== ALERTS OPERATIONS ==================== 
     
     def cache_active_alerts(self, alerts: List[Dict[str, Any]]) -> bool:
         """Cache list of active alerts"""
@@ -271,7 +271,7 @@ class RedisClient:
             )
             
             if result:
-                logger.debug(f"🚨 Cached {len(alerts)} active alerts")
+                logger.debug(f"Cached {len(alerts)} active alerts")
                 return True
             return False
             
@@ -287,10 +287,10 @@ class RedisClient:
             if cached_data:
                 data = ujson.loads(cached_data)
                 alerts = data.get("alerts", [])
-                logger.debug(f"📖 Retrieved {len(alerts)} active alerts")
+                logger.debug(f"Retrieved {len(alerts)} active alerts")
                 return alerts
             
-            logger.debug("❌ No cached active alerts")
+            logger.debug("No cached active alerts")
             return []
             
         except Exception as e:
@@ -324,7 +324,7 @@ class RedisClient:
             )
             
             if result:
-                logger.debug(f"🚨 Cached latest alert for zone {zone_id}")
+                logger.debug(f"Cached latest alert for zone {zone_id}")
                 return True
             return False
             
@@ -340,10 +340,10 @@ class RedisClient:
             
             if cached_data:
                 data = ujson.loads(cached_data)
-                logger.debug(f"🚨 Retrieved latest alert for zone {zone_id}")
+                logger.debug(f"Retrieved latest alert for zone {zone_id}")
                 return data
             
-            logger.debug(f"❌ No cached latest alert for zone {zone_id}")
+            logger.debug(f"No cached latest alert for zone {zone_id}")
             return None
             
         except Exception as e:
@@ -372,7 +372,7 @@ class RedisClient:
                     zone_id = key.decode('utf-8').split(':')[-1]
                     alerts_data[zone_id] = ujson.loads(data)
             
-            logger.debug(f"📖 Retrieved latest alerts for {len(alerts_data)} zones")
+            logger.debug(f"Retrieved latest alerts for {len(alerts_data)} zones")
             return alerts_data
             
         except Exception as e:
@@ -405,7 +405,7 @@ class RedisClient:
                 serialized_data
             )
             if result:
-                logger.debug(f"🤖 Cached ML anomaly for field {field_id}")
+                logger.debug(f"Cached ML anomaly for field {field_id}")
                 return True
             return False
         except Exception as e:
@@ -419,9 +419,9 @@ class RedisClient:
             cached_data = self.redis.get(key)
             if cached_data:
                 data = ujson.loads(cached_data)
-                logger.debug(f"🤖 Retrieved ML anomaly for field {field_id}")
+                logger.debug(f"Retrieved ML anomaly for field {field_id}")
                 return data
-            logger.debug(f"❌ No cached ML anomaly for field {field_id}")
+            logger.debug(f"No cached ML anomaly for field {field_id}")
             return None
         except Exception as e:
             logger.error(f"❌ Error retrieving ML anomaly for {field_id}: {e}")
@@ -464,7 +464,7 @@ class RedisClient:
                 results = pipe.execute()
                 cached_count = sum(1 for result in results if result)
                 
-            logger.debug(f"📡 Batch cached {cached_count}/{len(sensor_batch)} sensor records")
+            logger.debug(f"Batch cached {cached_count}/{len(sensor_batch)} sensor records")
             return cached_count
             
         except Exception as e:
@@ -497,7 +497,7 @@ class RedisClient:
                 results = pipe.execute()
                 cached_count = sum(1 for result in results if result)
                 
-            logger.debug(f"🌦️ Batch cached {cached_count}/{len(weather_batch)} weather records")
+            logger.debug(f"Batch cached {cached_count}/{len(weather_batch)} weather records")
             return cached_count
             
         except Exception as e:
@@ -566,6 +566,7 @@ class RedisClient:
             logger.error(f"❌ Error getting cache statistics: {e}")
             return {}
     
+    #TODO: NON utilizzata da nessuna parte nel progetto.Solo definita ma mai chiamata
     def clear_expired_keys(self) -> int:
         """Clear expired keys manually (Redis handles this automatically, but this is for monitoring)"""
         try:

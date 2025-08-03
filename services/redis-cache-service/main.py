@@ -57,21 +57,6 @@ def setup_logging():
     
     logger.info(" Logging configured successfully")
 
-#TODO: remove it 
-def print_startup_banner():
-    """Print service startup banner"""
-    banner = """
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                         🌾 CROP DISEASE MONITORING SYSTEM                     ║
-║                              Redis Cache Service                             ║
-║                                                                              ║
-║  📡 High-performance Kafka → Redis streaming cache                           ║
-║  🚀 Real-time data processing for dashboard acceleration                     ║
-║  ⚡ Sub-millisecond response times for sensor & weather data                  ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-    """
-    print(banner)
-
 
 def print_system_info():
     """Print system and configuration information"""
@@ -166,7 +151,6 @@ def main():
         setup_logging()
         
         # Print startup information
-        print_startup_banner()
         print_system_info()
         
         # Wait for dependencies

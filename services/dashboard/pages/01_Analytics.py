@@ -4,15 +4,11 @@ Real-Time Data Page - Live sensor and weather data monitoring
 """
 
 import streamlit as st
-import requests
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 import redis
-import time
 import os
 from streamlit_autorefresh import st_autorefresh
 
@@ -23,8 +19,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# API Configuration
-API_BASE_URL = "http://crop-disease-service:8000/api/v1"
+# Redis Configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 
@@ -35,27 +30,55 @@ st.markdown("---")
 with st.sidebar:
     st.header("Data Settings")
     
-    # Field filters
-    st.subheader("Field Selection")
-    show_all_fields = st.checkbox("All fields", value=True)
+    # Field filters with expander and checkboxes
+    with st.expander("🌾 Field Selection", expanded=True):
+        # Checkbox for "All fields"
+        show_all_fields = st.checkbox("All fields", value=True, key="all_fields")
+        
+        # Individual field checkboxes
+        field_01 = st.checkbox("Field 01", value=True, key="field_01")
+        field_02 = st.checkbox("Field 02", value=True, key="field_02")
+        field_03 = st.checkbox("Field 03", value=True, key="field_03")
+        
+        # Create selected_fields list based on checkboxes
+        if show_all_fields:
+            selected_fields = ["field_01", "field_02", "field_03"]
+        else:
+            selected_fields = []
+            if field_01:
+                selected_fields.append("field_01")
+            if field_02:
+                selected_fields.append("field_02")
+            if field_03:
+                selected_fields.append("field_03")
     
-    if not show_all_fields:
-        selected_fields = st.multiselect(
-            "Select specific fields",
-            ["field_01", "field_02", "field_03"],
-            default=["field_01", "field_02"]
-        )
-    
-    # Weather location selection
-    st.subheader("Weather Location Selection")
-    show_all_locations = st.checkbox("All locations", value=True)
-    
-    if not show_all_locations:
-        selected_locations = st.multiselect(
-            "Select specific locations",
-            ["Verona", "Milan", "Rome", "Naples", "Palermo"],
-            default=["Verona"]
-        )
+    # Weather location selection with expander and checkboxes
+    with st.expander("🌦️ Weather Location Selection", expanded=True):
+        # Checkbox for "All locations"
+        show_all_locations = st.checkbox("All locations", value=True, key="all_locations")
+        
+        # Individual location checkboxes
+        verona = st.checkbox("Verona", value=True, key="verona")
+        milan = st.checkbox("Milan", value=True, key="milan")
+        rome = st.checkbox("Rome", value=True, key="rome")
+        naples = st.checkbox("Naples", value=True, key="naples")
+        palermo = st.checkbox("Palermo", value=True, key="palermo")
+        
+        # Create selected_locations list based on checkboxes
+        if show_all_locations:
+            selected_locations = ["Verona", "Milan", "Rome", "Naples", "Palermo"]
+        else:
+            selected_locations = []
+            if verona:
+                selected_locations.append("Verona")
+            if milan:
+                selected_locations.append("Milan")
+            if rome:
+                selected_locations.append("Rome")
+            if naples:
+                selected_locations.append("Naples")
+            if palermo:
+                selected_locations.append("Palermo")
     
 
 
@@ -160,7 +183,6 @@ def get_weather_data_from_redis(_redis_client):
         st.error(f"❌ Error retrieving weather data from Redis: {e}")
         return []
 
-# System stats functionality removed due to serialization complexity
 
 # Load data
 # Get Redis client
@@ -208,9 +230,321 @@ st.markdown("---")
 sensor_data = get_sensor_data_from_redis(redis_client)
 weather_data = get_weather_data_from_redis(redis_client)
 
-col1, col2 = st.columns(2)
+# Weather Insights Section
+if weather_data:
+    st.markdown("---")
+    
+    # Create a styled header
+    st.markdown("""
+    <div style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+        <h3 style="color: white; margin: 0; text-align: center;">🌦️ Weather Insights</h3>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Convert to DataFrame for insights
+    weather_df = pd.DataFrame(weather_data)
+    
+    if not weather_df.empty:
+        # Create weather insights cards with better styling
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if 'temp_c' in weather_df.columns:
+                avg_temp = weather_df['temp_c'].mean()
+                st.markdown("""
+                <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #ff6b6b; text-align: center;">
+                    <div style="font-size: 24px; color: #ff6b6b;">🌡️</div>
+                    <div style="font-size: 18px; font-weight: bold; color: #495057;">{:.1f}°C</div>
+                    <div style="font-size: 12px; color: #6c757d;">Average Temperature</div>
+                    <div style="font-size: 10px; color: #adb5bd;">Range: {:.1f}°C</div>
+                </div>
+                """.format(avg_temp, weather_df['temp_c'].max() - weather_df['temp_c'].min()), unsafe_allow_html=True)
+        
+        with col2:
+            if 'humidity' in weather_df.columns:
+                avg_humidity = weather_df['humidity'].mean()
+                st.markdown("""
+                <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #4ecdc4; text-align: center;">
+                    <div style="font-size: 24px; color: #4ecdc4;">💧</div>
+                    <div style="font-size: 18px; font-weight: bold; color: #495057;">{:.0f}%</div>
+                    <div style="font-size: 12px; color: #6c757d;">Average Humidity</div>
+                    <div style="font-size: 10px; color: #adb5bd;">Range: {:.0f}%</div>
+                </div>
+                """.format(avg_humidity, weather_df['humidity'].max() - weather_df['humidity'].min()), unsafe_allow_html=True)
+        
+        with col3:
+            if 'precip_mm' in weather_df.columns:
+                total_precip = weather_df['precip_mm'].sum()
+                precip_level = "None" if total_precip == 0 else "Light" if total_precip < 5 else "Moderate" if total_precip < 15 else "Heavy"
+                precip_color = "#28a745" if precip_level == "None" else "#ffc107" if precip_level == "Light" else "#fd7e14" if precip_level == "Moderate" else "#dc3545"
+                st.markdown("""
+                <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid {}; text-align: center;">
+                    <div style="font-size: 24px; color: {};">🌧️</div>
+                    <div style="font-size: 18px; font-weight: bold; color: #495057;">{}</div>
+                    <div style="font-size: 12px; color: #6c757d;">Precipitation Level</div>
+                    <div style="font-size: 10px; color: #adb5bd;">{:.1f}mm total</div>
+                </div>
+                """.format(precip_color, precip_color, precip_level, total_precip), unsafe_allow_html=True)
+        
+        with col4:
+            if 'uv' in weather_df.columns:
+                avg_uv = weather_df['uv'].mean()
+                uv_level = "Low" if avg_uv < 3 else "Moderate" if avg_uv < 6 else "High" if avg_uv < 8 else "Very High"
+                uv_color = "#28a745" if uv_level == "Low" else "#ffc107" if uv_level == "Moderate" else "#fd7e14" if uv_level == "High" else "#dc3545"
+                st.markdown("""
+                <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid {}; text-align: center;">
+                    <div style="font-size: 24px; color: {};">☀️</div>
+                    <div style="font-size: 18px; font-weight: bold; color: #495057;">{}</div>
+                    <div style="font-size: 12px; color: #6c757d;">UV Index Level</div>
+                    <div style="font-size: 10px; color: #adb5bd;">{:.1f} average</div>
+                </div>
+                """.format(uv_color, uv_color, uv_level, avg_uv), unsafe_allow_html=True)
+        
+        # Weather conditions summary with better styling
+        if 'condition' in weather_df.columns:
+            st.markdown("---")
+            
+            # Group conditions by type and show cities
+            conditions_summary = {}
+            for _, row in weather_df.iterrows():
+                condition = row['condition']
+                location = row['location']
+                
+                if condition not in conditions_summary:
+                    conditions_summary[condition] = []
+                conditions_summary[condition].append(location)
+            
+            # Display conditions with cities using Streamlit components
+            st.markdown("---")
+            st.subheader("🌤️ Current Weather Conditions")
+            
+            # Display each condition with elegant styling
+            for condition, cities in conditions_summary.items():
+                cities_text = ", ".join(cities)
+                st.markdown(f"""
+                <div style="
+                    background: white;
+                    color: #333;
+                    padding: 15px 25px;
+                    border-radius: 8px;
+                    margin-bottom: 10px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                    border: 1px solid #e0e0e0;
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                ">
+                    <span style="
+                        color: #333;
+                        font-size: 20px;
+                        font-weight: bold;
+                    ">{condition}</span>
+                    <br>
+                    <span style="
+                        color: #666;
+                        font-size: 16px;
+                    ">Location: {cities_text}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Current data tables section
+        st.markdown("---")
+        st.subheader("📊 Current Data Overview")
+        
+        # Two columns for tables
+        tab1, tab2 = st.tabs(["🌡️ Sensor Data", "🌦️ Weather Data"])
+        
+        with tab1:
+            if sensor_data:
+                sensor_df = pd.DataFrame(sensor_data)
+                if not sensor_df.empty:
+                    # Create compact sensor table
+                    display_sensors = sensor_df[['field_id', 'temperature', 'humidity', 'soil_ph']].copy()
+                    display_sensors.columns = ['Field', 'Temp (°C)', 'Humidity (%)', 'pH']
+                    display_sensors = display_sensors.reset_index(drop=True)  # Reset index to remove any existing indices
+                    
+                    # Pre-format the data to ensure proper decimal places
+                    display_sensors['Temp (°C)'] = display_sensors['Temp (°C)'].round(1)
+                    display_sensors['Humidity (%)'] = display_sensors['Humidity (%)'].round(1)
+                    display_sensors['pH'] = display_sensors['pH'].round(2)
+                    
+                    # Add color coding for values
+                    def color_temp(val):
+                        if val < 10:
+                            return 'background-color: #e3f2fd'  # Light blue for cold
+                        elif val > 30:
+                            return 'background-color: #ffebee'  # Light red for hot
+                        else:
+                            return 'background-color: #f1f8e9'  # Light green for normal
+                    
+                    def color_humidity(val):
+                        if val < 30:
+                            return 'background-color: #fff8e1'  # Light yellow for dry
+                        elif val > 80:
+                            return 'background-color: #e8f5e8'  # Light green for humid
+                        else:
+                            return 'background-color: #f3e5f5'  # Light purple for normal
+                    
+                    def color_ph(val):
+                        if val < 6.0:
+                            return 'background-color: #ffcdd2'  # Light red for acidic
+                        elif val > 7.5:
+                            return 'background-color: #c8e6c9'  # Light green for alkaline
+                        else:
+                            return 'background-color: #fff9c4'  # Light yellow for neutral
+                    
+                    # Compact legend above table with labels
+                    st.markdown("""
+                    <div style="background-color: #f8f9fa; padding: 12px; border-radius: 8px; border: 1px solid #e9ecef; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <span style="font-weight: bold; color: #495057;">🌡️ Temp:</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #e3f2fd; border: 1px solid #ccc; margin-right: 4px;"></span>Cold</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #f1f8e9; border: 1px solid #ccc; margin-right: 4px;"></span>Normal</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #ffebee; border: 1px solid #ccc; margin-right: 4px;"></span>Hot</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <span style="font-weight: bold; color: #495057;">💧 Humidity:</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #fff8e1; border: 1px solid #ccc; margin-right: 4px;"></span>Dry</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #f3e5f5; border: 1px solid #ccc; margin-right: 4px;"></span>Normal</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #e8f5e8; border: 1px solid #ccc; margin-right: 4px;"></span>Humid</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <span style="font-weight: bold; color: #495057;">🌱 Soil pH:</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #ffcdd2; border: 1px solid #ccc; margin-right: 4px;"></span>Acidic</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #fff9c4; border: 1px solid #ccc; margin-right: 4px;"></span>Neutral</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #c8e6c9; border: 1px solid #ccc; margin-right: 4px;"></span>Alkaline</span>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Apply styling
+                    styled_sensors = display_sensors.style\
+                        .applymap(color_temp, subset=['Temp (°C)'])\
+                        .applymap(color_humidity, subset=['Humidity (%)'])\
+                        .applymap(color_ph, subset=['pH'])\
+                        .format({'Temp (°C)': '{:.1f}', 'Humidity (%)': '{:.1f}', 'pH': '{:.2f}'})\
+                        .hide(axis='index')\
+                        .set_table_styles([
+                            {'selector': 'th', 'props': [('background-color', '#f8f9fa'), ('color', '#495057'), ('font-weight', 'bold'), ('text-align', 'center')]},
+                            {'selector': 'td', 'props': [('text-align', 'center'), ('padding', '8px')]},
+                            {'selector': '.index', 'props': [('display', 'none')]}  # Hide index column completely
+                        ])
+                    
+                    # Calculate dynamic height based on actual number of rows
+                    num_rows = len(display_sensors)
+                    table_height = max(150, num_rows * 45)  # 45px per riga, minimo 150px
+                    
+                    st.dataframe(styled_sensors, use_container_width=True, height=table_height)
+                else:
+                    st.info("No sensor data available")
+            else:
+                st.warning("❌ Unable to retrieve sensor data")
+        
+        with tab2:
+            if weather_data:
+                weather_df = pd.DataFrame(weather_data)
+                if not weather_df.empty:
+                    # Create compact weather table
+                    display_columns = ['location', 'temp_c', 'humidity']
+                    if 'wind_kph' in weather_df.columns:
+                        display_columns.append('wind_kph')
+                    
+                    display_weather = weather_df[display_columns].copy()
+                    column_names = ['Location', 'Temp (°C)', 'Humidity (%)']
+                    if 'wind_kph' in weather_df.columns:
+                        column_names.append('Wind (km/h)')
+                    
+                    display_weather.columns = column_names
+                    display_weather = display_weather.reset_index(drop=True)  # Reset index to remove any existing indices
+                    
+                    # Add color coding for weather values
+                    def color_weather_temp(val):
+                        if val < 10:
+                            return 'background-color: #e3f2fd'  # Light blue for cold
+                        elif val > 25:
+                            return 'background-color: #ffebee'  # Light red for hot
+                        else:
+                            return 'background-color: #f1f8e9'  # Light green for normal
+                    
+                    def color_weather_humidity(val):
+                        if val < 40:
+                            return 'background-color: #fff8e1'  # Light yellow for dry
+                        elif val > 80:
+                            return 'background-color: #e8f5e8'  # Light green for humid
+                        else:
+                            return 'background-color: #f3e5f5'  # Light purple for normal
+                    
+                    def color_wind(val):
+                        if val < 10:
+                            return 'background-color: #e8f5e8'  # Light green for calm
+                        elif val > 30:
+                            return 'background-color: #ffcdd2'  # Light red for strong
+                        else:
+                            return 'background-color: #fff9c4'  # Light yellow for moderate
+                    
+                    # Compact legend above table with labels
+                    st.markdown("""
+                    <div style="background-color: #f8f9fa; padding: 12px; border-radius: 8px; border: 1px solid #e9ecef; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <span style="font-weight: bold; color: #495057;">🌡️ Temp:</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #e3f2fd; border: 1px solid #ccc; margin-right: 4px;"></span>Cold</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #f1f8e9; border: 1px solid #ccc; margin-right: 4px;"></span>Normal</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #ffebee; border: 1px solid #ccc; margin-right: 4px;"></span>Hot</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <span style="font-weight: bold; color: #495057;">💧 Humidity:</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #fff8e1; border: 1px solid #ccc; margin-right: 4px;"></span>Dry</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #f3e5f5; border: 1px solid #ccc; margin-right: 4px;"></span>Normal</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #e8f5e8; border: 1px solid #ccc; margin-right: 4px;"></span>Humid</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <span style="font-weight: bold; color: #495057;">💨 Wind:</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #e8f5e8; border: 1px solid #ccc; margin-right: 4px;"></span>Calm</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #fff9c4; border: 1px solid #ccc; margin-right: 4px;"></span>Moderate</span>
+                                <span><span style="display: inline-block; width: 12px; height: 12px; background-color: #ffcdd2; border: 1px solid #ccc; margin-right: 4px;"></span>Strong</span>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Pre-format the data to ensure proper decimal places (BEFORE styling)
+                    display_weather['Temp (°C)'] = display_weather['Temp (°C)'].round(1)
+                    display_weather['Humidity (%)'] = display_weather['Humidity (%)'].round(1).astype(int)
+                    if 'Wind (km/h)' in display_weather.columns:
+                        display_weather['Wind (km/h)'] = display_weather['Wind (km/h)'].round(1)
+                    
+                    # Apply styling
+                    styled_weather = display_weather.style\
+                        .applymap(color_weather_temp, subset=['Temp (°C)'])\
+                        .applymap(color_weather_humidity, subset=['Humidity (%)'])\
+                        .format({'Temp (°C)': '{:.1f}', 'Humidity (%)': '{:.0f}'})\
+                        .hide(axis='index')\
+                        .set_table_styles([
+                            {'selector': 'th', 'props': [('background-color', '#f8f9fa'), ('color', '#495057'), ('font-weight', 'bold'), ('text-align', 'center')]},
+                            {'selector': 'td', 'props': [('text-align', 'center'), ('padding', '8px')]},
+                            {'selector': '.index', 'props': [('display', 'none')]}  # Hide index column completely
+                        ])
+                    
+                    if 'Wind (km/h)' in display_weather.columns:
+                        styled_weather = styled_weather\
+                            .format({'Wind (km/h)': '{:.1f}'})\
+                            .applymap(color_wind, subset=['Wind (km/h)'])
+                    
+                    # Calculate dynamic height based on actual number of rows
+                    num_rows = len(display_weather)
+                    table_height = max(150, num_rows * 45)  # 45px per riga, minimo 150px
+                    
+                    st.dataframe(styled_weather, use_container_width=True, height=table_height)
+                else:
+                    st.info("No weather data available")
+            else:
+                st.warning("❌ Unable to retrieve weather data")
 
-with col1:
+st.markdown("---")
+
+# IoT Sensor Data visualization section
+with st.expander("📡 IoT Sensor Data", expanded=True):
     st.subheader("IoT Sensor Data (Redis Cache)")
     
     if sensor_data:
@@ -231,7 +565,17 @@ with col1:
                 except:
                     pass
             
-            # Temperature chart
+            # Temperature chart in its own container
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                        padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+                        margin-bottom: 20px;">
+                <h4 style="color: white; margin: 0 0 10px 0; text-align: center; font-size: 16px;">
+                    🌡️ Temperature Analysis
+                </h4>
+            </div>
+            """, unsafe_allow_html=True)
+            
             fig_temp = px.bar(
                 sensor_df,
                 x='field_id',
@@ -240,10 +584,32 @@ with col1:
                 color='temperature',
                 color_continuous_scale='RdYlBu_r'
             )
-            fig_temp.update_layout(height=300)
+            fig_temp.update_layout(
+                height=300,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(size=12),
+                title_font_size=16,
+                margin=dict(l=50, r=50, t=50, b=50)
+            )
+            fig_temp.update_traces(
+                marker_line_width=1,
+                marker_line_color='rgba(0,0,0,0.1)',
+                width=0.8
+            )
             st.plotly_chart(fig_temp, use_container_width=True)
             
-            # Humidity chart
+            # Humidity chart in its own container
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); 
+                        padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+                        margin-bottom: 20px;">
+                <h4 style="color: white; margin: 0 0 10px 0; text-align: center; font-size: 16px;">
+                    💧 Humidity Analysis
+                </h4>
+            </div>
+            """, unsafe_allow_html=True)
+            
             fig_humidity = px.bar(
                 sensor_df,
                 x='field_id',
@@ -252,10 +618,32 @@ with col1:
                 color='humidity',
                 color_continuous_scale='Blues'
             )
-            fig_humidity.update_layout(height=300)
+            fig_humidity.update_layout(
+                height=300,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(size=12),
+                title_font_size=16,
+                margin=dict(l=50, r=50, t=50, b=50)
+            )
+            fig_humidity.update_traces(
+                marker_line_width=1,
+                marker_line_color='rgba(0,0,0,0.1)',
+                width=0.8
+            )
             st.plotly_chart(fig_humidity, use_container_width=True)
             
-            # Soil pH chart
+            # Soil pH chart in its own container
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); 
+                        padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+                        margin-bottom: 20px;">
+                <h4 style="color: white; margin: 0 0 10px 0; text-align: center; font-size: 16px;">
+                    🌱 Soil pH Analysis
+                </h4>
+            </div>
+            """, unsafe_allow_html=True)
+            
             fig_ph = px.bar(
                 sensor_df,
                 x='field_id',
@@ -264,14 +652,20 @@ with col1:
                 color='soil_ph',
                 color_continuous_scale='Greens'
             )
-            fig_ph.update_layout(height=300)
+            fig_ph.update_layout(
+                height=300,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(size=12),
+                title_font_size=16,
+                margin=dict(l=50, r=50, t=50, b=50)
+            )
+            fig_ph.update_traces(
+                marker_line_width=1,
+                marker_line_color='rgba(0,0,0,0.1)',
+                width=0.8
+            )
             st.plotly_chart(fig_ph, use_container_width=True)
-            
-            # Current values table
-            st.subheader("Current Sensor Values")
-            display_sensors = sensor_df[['field_id', 'temperature', 'humidity', 'soil_ph', 'timestamp']].copy()
-            display_sensors.columns = ['Field', 'Temperature (°C)', 'Humidity (%)', 'Soil pH', 'Timestamp']
-            st.dataframe(display_sensors, use_container_width=True)
             
         else:
             st.info("No sensor data available for the selected fields")
@@ -279,84 +673,9 @@ with col1:
         st.warning("❌ Unable to retrieve sensor data from Redis cache")
         st.info("Check that Redis cache service is running and processing Kafka data")
 
-with col2:
-    st.subheader("Weather Data (Redis Cache)")
-    
-    if weather_data:
-        # Convert to DataFrame
-        weather_df = pd.DataFrame(weather_data)
-        
-        # Filter by selected locations
-        if not show_all_locations and 'selected_locations' in locals():
-            weather_df = weather_df[weather_df['location'].isin(selected_locations)]
-        
-        if not weather_df.empty:
-            # Show data freshness
-            if 'cached_at' in weather_df.columns:
-                try:
-                    latest_cache_time = pd.to_datetime(weather_df['cached_at']).max()
-                    cache_age = (datetime.now() - latest_cache_time.tz_localize(None)).total_seconds()
-                    st.info(f"🌦️ Data cached {cache_age:.0f} seconds ago")
-                except:
-                    pass
-            
-            # Weather temperature chart
-            fig_weather_temp = px.bar(
-                weather_df,
-                x='location',
-                y='temp_c',
-                title="Current Weather Temperature (°C)",
-                color='temp_c',
-                color_continuous_scale='RdYlBu_r'
-            )
-            fig_weather_temp.update_layout(height=300)
-            st.plotly_chart(fig_weather_temp, use_container_width=True)
-            
-            # Weather humidity chart
-            fig_weather_humidity = px.bar(
-                weather_df,
-                x='location',
-                y='humidity',
-                title="Current Weather Humidity (%)",
-                color='humidity',
-                color_continuous_scale='Blues'
-            )
-            fig_weather_humidity.update_layout(height=300)
-            st.plotly_chart(fig_weather_humidity, use_container_width=True)
-            
-            # Wind speed chart
-            if 'wind_kph' in weather_df.columns:
-                fig_wind = px.bar(
-                    weather_df,
-                    x='location',
-                    y='wind_kph',
-                    title="Current Wind Speed (km/h)",
-                    color='wind_kph',
-                    color_continuous_scale='Greys'
-                )
-                fig_wind.update_layout(height=300)
-                st.plotly_chart(fig_wind, use_container_width=True)
-            
-            # Current weather values table
-            st.subheader("Current Weather Values")
-            display_columns = ['location', 'temp_c', 'humidity', 'timestamp']
-            if 'wind_kph' in weather_df.columns:
-                display_columns.insert(3, 'wind_kph')
-            
-            display_weather = weather_df[display_columns].copy()
-            column_names = ['Location', 'Temperature (°C)', 'Humidity (%)']
-            if 'wind_kph' in weather_df.columns:
-                column_names.insert(3, 'Wind (km/h)')
-            column_names.append('Timestamp')
-            
-            display_weather.columns = column_names
-            st.dataframe(display_weather, use_container_width=True)
-            
-        else:
-            st.info("No weather data available for the selected locations")
-    else:
-        st.warning("❌ Unable to retrieve weather data from Redis cache")
-        st.info("Check that Redis cache service is running and processing Kafka data")
+
+
+st.markdown("---")
 
 # Footer
 st.markdown("---")
