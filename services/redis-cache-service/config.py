@@ -50,22 +50,8 @@ class CacheConfig:
     # Key patterns
     sensor_latest_pattern: str = "sensors:latest:{field_id}"
     weather_latest_pattern: str = "weather:latest:{location}"
-    alerts_active_key: str = "alerts:active" 
     alerts_latest_pattern: str = "alerts:latest:{zone_id}"
-    predictions_latest_key: str = "predictions:latest" #TODO: # NOTA: Questo pattern NON viene utilizzato nel codice attuale!È definito ma non implementato
     prediction_latest_pattern: str = "predictions:latest:{field_id}"
-    
-    #TODO: # Template per dati aggregati per ora
-# {field_id} = identificatore campo
-# {hour} = timestamp ora (es: "2024-01-15-10"
-# Chiavi che verrebbero generate:
-# "sensors:hourly:field_01:2024-01-15-10"  # Dati field_01 alle 10:00
-# "sensors:hourly:field_01:2024-01-15-11"  # Dati field_01 alle 11:00
-# "sensors:hourly:field_02:2024-01-15-10"  # Dati field_02 alle 10:00
-#Al momento non utilizzato, ma è definito per poterlo utilizzare in futuro
-    # Aggregation patterns
-    sensor_hourly_pattern: str = "sensors:hourly:{field_id}:{hour}"
-    weather_hourly_pattern: str = "weather:hourly:{location}:{hour}"
     
 
 @dataclass

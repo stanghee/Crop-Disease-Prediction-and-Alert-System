@@ -16,7 +16,6 @@ This service connects Kafka and Redis to provide real-time, up-to-date data to t
    - **WeatherProcessor**: Processes weather data (temperature, humidity, wind)
    - **MLAnomalyProcessor**: Processes ML anomaly predictions
    - **AlertsProcessor**: Processes threshold alerts from Spark Streaming
-   - **StatsMonitor**: Monitors system health and statistics
 3. **Data Validation**: Each message is validated against predefined schemas before caching
 4. **Batch Processing**: Sensor and weather data are processed in batches for efficiency
 5. **Redis Caching**: Data is saved with specific keys and configurable TTL values
@@ -46,7 +45,7 @@ This service connects Kafka and Redis to provide real-time, up-to-date data to t
 - **Source**: `alerts-anomalies` Kafka topic
 - **Redis Key**: `alerts:latest:{zone_id}`
 - **TTL**: 30 minutes
-- **Example**: `alerts:latest:field_01` (sensors) or `alerts:latest:Veroa` (weather)
+- **Example**: `alerts:latest:field_01` (sensors) or `alerts:latest:Verona` (weather)
 
 ## Configuration
 
@@ -79,7 +78,7 @@ Main environment variables:
 - **Connection Pooling**: Efficient Redis connection management
 - **Batch Operations**: Groups multiple operations for better throughput
 - **Pipeline Support**: Uses Redis pipelines for bulk operations
-- **Concurrent Processing**: 5 independent threads for parallel data processing
+- **Concurrent Processing**: 4 independent threads for parallel data processing
 - **Smart Caching**: Automatic TTL management and metadata tracking
 - **Error Handling**: Robust error handling with retry logic and graceful degradation
 
@@ -90,7 +89,7 @@ The service provides comprehensive monitoring:
 - **Processing Statistics**: Messages processed, cached, and error counts
 - **Performance Metrics**: Messages per second, cache success rates
 - **Redis Health**: Connection status, memory usage, hit ratios
-- **Thread Status**: Active thread monitoring and health checks
+- **Thread Status**: Active thread monitoring via main monitoring loop
 
 
 

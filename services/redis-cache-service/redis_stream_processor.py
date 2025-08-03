@@ -103,14 +103,6 @@ class RedisStreamProcessor:
             alerts_thread.start()
             self.processing_threads.append(alerts_thread)
             
-            # Start statistics monitoring thread
-            stats_thread = threading.Thread(
-                target=self._monitor_statistics,
-                name="StatsMonitor",
-                daemon=True
-            )
-            stats_thread.start()
-            self.processing_threads.append(stats_thread)
             
             logger.success(f"✅ Started {len(self.processing_threads)} processing threads")
             
@@ -126,7 +118,7 @@ class RedisStreamProcessor:
     
     def _main_monitoring_loop(self):
         """Main monitoring loop - keeps the service alive"""
-        logger.info(" Main monitoring loop started")
+        logger.info("Main monitoring loop started")
         
         try:
             while not self.shutdown_event.is_set():
@@ -134,7 +126,7 @@ class RedisStreamProcessor:
                 active_threads = sum(1 for t in self.processing_threads if t.is_alive())
                 
                 if active_threads < len(self.processing_threads):
-                    logger.warning(f" Only {active_threads}/{len(self.processing_threads)} threads active")
+                    logger.warning(f"Only {active_threads}/{len(self.processing_threads)} threads active")
                 
                 # Log statistics periodically
                 if self.stats["messages_processed"] > 0:
@@ -156,7 +148,7 @@ class RedisStreamProcessor:
     
     def _process_sensor_stream(self):
         """Process sensor data stream from Kafka to Redis"""
-        logger.info(" Starting sensor stream processor...")
+        logger.info("Starting sensor stream processor...")
         
         consumer = None
         try:
@@ -229,7 +221,7 @@ class RedisStreamProcessor:
         finally:
             if consumer:
                 consumer.close()
-            logger.info(" Sensor stream processor stopped")
+            logger.info("Sensor stream processor stopped")
     
     def _process_weather_stream(self):
         """Process weather data stream from Kafka to Redis"""
@@ -306,7 +298,7 @@ class RedisStreamProcessor:
         finally:
             if consumer:
                 consumer.close()
-            logger.info(" Weather stream processor stopped")
+            logger.info("Weather stream processor stopped")
     
     def _process_ml_anomaly_stream(self):
         """Process ML anomaly data stream from Kafka to Redis"""
@@ -359,7 +351,7 @@ class RedisStreamProcessor:
         finally:
             if consumer:
                 consumer.close()
-            logger.info(" ML anomaly stream processor stopped")
+            logger.info("ML anomaly stream processor stopped")
 
     def _process_alerts_stream(self):
         """Process alerts data stream from Kafka to Redis"""
@@ -420,37 +412,9 @@ class RedisStreamProcessor:
         finally:
             if consumer:
                 consumer.close()
-            logger.info("🚨 Alerts stream processor stopped")
+            logger.info("Alerts stream processor stopped")
 
-#TODO:
-# Codice Morto:
-# Nessun utilizzo nel progetto
-# Nessun endpoint API per esporle
-# Nessun consumer delle statistiche
-# Duplicazione Parziale:
-# Molte statistiche sono già disponibili
-# Health check già implementato nel main loop
-# Thread monitoring già presente
-#Oltre  questa funzione ci sono altre funzioni che sono inutili e sono riportate sotto
-    def _monitor_statistics(self):
-        """Monitor and cache system statistics"""
-        logger.info(" Starting statistics monitor...")
-        
-        while not self.shutdown_event.is_set():
-            try:
-                # System stats temporarily disabled due to datetime serialization complexity
-                # The core Redis caching functionality works perfectly without these stats
-                logger.debug("📊 Statistics monitoring cycle completed (system stats disabled)")
-                
-                # Wait before next update
-                self.shutdown_event.wait(self.service_config.health_check_interval)
-                
-            except Exception as e:
-                logger.error(f"❌ Error in statistics monitoring: {e}")
-                self.shutdown_event.wait(10)  # Wait a bit before retry
-        
-        logger.info(" Statistics monitor stopped")
-    
+   
     # ==================== DATA VALIDATION FUNCTIONS ====================
     # 
     # Ottimizzazioni implementate:
@@ -474,7 +438,7 @@ class RedisStreamProcessor:
             # Check required fields
             for field in SENSOR_REQUIRED_FIELDS:
                 if field not in data:
-                    logger.warning(f"⚠️ Missing required sensor field: {field}")
+                    logger.warning(f"Missing required sensor field: {field}")
                     return False
             
             # Basic data type validation
@@ -515,7 +479,7 @@ class RedisStreamProcessor:
             return True
             
         except Exception as e:
-            logger.warning(f"⚠️ Sensor data validation error: {e}")
+            logger.warning(f"Sensor data validation error: {e}")
             return False
     
     def _validate_weather_data(self, data: Dict[str, Any]) -> bool:
@@ -527,7 +491,7 @@ class RedisStreamProcessor:
             # Check required fields
             for field in WEATHER_REQUIRED_FIELDS:
                 if field not in data:
-                    logger.warning(f"⚠️ Missing required weather field: {field}")
+                    logger.warning(f"Missing required weather field: {field}")
                     return False
             
             # Basic data type validation
@@ -570,10 +534,10 @@ class RedisStreamProcessor:
             return True
             
         except Exception as e:
-            logger.warning(f"⚠️ Weather data validation error: {e}")
+            logger.warning(f"Weather data validation error: {e}")
             return False
             
-    #TODO: check if this function "validate_alert_data" is needed.
+
     def _validate_alert_data(self, data: Dict[str, Any]) -> bool:
         """Validate alert data structure"""
         try:
@@ -583,7 +547,7 @@ class RedisStreamProcessor:
             # Check required fields
             for field in ALERT_REQUIRED_FIELDS:
                 if field not in data:
-                    logger.warning(f"⚠️ Missing required alert field: {field}")
+                    logger.warning(f"Missing required alert field: {field}")
                     return False
             
             # Basic data type validation
@@ -607,7 +571,7 @@ class RedisStreamProcessor:
             return True
             
         except Exception as e:
-            logger.warning(f"⚠️ Alert data validation error: {e}")
+            logger.warning(f"Alert data validation error: {e}")
             return False
 
     def _validate_ml_anomaly_data(self, data: Dict[str, Any]) -> bool:
@@ -617,7 +581,7 @@ class RedisStreamProcessor:
                 return False
             for field in ML_ANOMALY_REQUIRED_FIELDS:
                 if field not in data:
-                    logger.warning(f"⚠️ Missing required ML anomaly field: {field}")
+                    logger.warning(f"Missing required ML anomaly field: {field}")
                     return False
             # Validazione base dei tipi principali
             if not isinstance(data["field_id"], str):
@@ -640,7 +604,7 @@ class RedisStreamProcessor:
                 return False
             return True
         except Exception as e:
-            logger.warning(f"⚠️ ML anomaly data validation error: {e}")
+            logger.warning(f"ML anomaly data validation error: {e}")
             return False
     
     def _cache_sensor_batch(self, sensor_batch: List[Dict[str, Any]]) -> int:
@@ -650,7 +614,7 @@ class RedisStreamProcessor:
             logger.debug(f" Cached {cached_count}/{len(sensor_batch)} sensor records")
             return cached_count
         except Exception as e:
-            logger.error(f"❌ Error caching sensor batch: {e}")
+            logger.error(f"Error caching sensor batch: {e}")
             return 0
     
     def _cache_weather_batch(self, weather_batch: List[Dict[str, Any]]) -> int:
@@ -660,55 +624,10 @@ class RedisStreamProcessor:
             logger.debug(f" Cached {cached_count}/{len(weather_batch)} weather records")
             return cached_count
         except Exception as e:
-            logger.error(f"❌ Error caching weather batch: {e}")
+            logger.error(f"Error caching weather batch: {e}")
             return 0
     
-    #TODO: NON utilizzata da nessuna parte nel progetto.Solo definita ma mai chiamata
-    def get_status(self) -> Dict[str, Any]:
-        """Get current processor status"""
-        active_threads = sum(1 for t in self.processing_threads if t.is_alive())
-        
-        start_time = datetime.fromisoformat(self.stats["start_time"])
-        uptime = (datetime.now() - start_time).total_seconds()
-        
-        return {
-            "status": "running" if not self.shutdown_event.is_set() else "shutting_down",
-            "active_threads": active_threads,
-            "total_threads": len(self.processing_threads),
-            "uptime_seconds": uptime,
-            "redis_connected": self.redis_client.connected,
-            "kafka_consumers": len(self.consumers),
-            "processing_stats": self.stats.copy()
-        }
-    
-    #TODO: NON utilizzata da nessuna parte nel progetto.Solo definita ma mai chiamata
-    def get_detailed_stats(self) -> Dict[str, Any]:
-        """Get detailed processing statistics"""
-        start_time = datetime.fromisoformat(self.stats["start_time"])
-        uptime = (datetime.now() - start_time).total_seconds()
-        
-        # Calculate rates
-        messages_per_second = self.stats["messages_processed"] / max(uptime, 1)
-        cache_success_rate = (
-            self.stats["messages_cached"] / max(self.stats["messages_processed"], 1) * 100
-            if self.stats["messages_processed"] > 0 else 0
-        )
-        
-        return {
-            "processing_stats": self.stats.copy(),
-            "performance_metrics": {
-                "uptime_seconds": uptime,
-                "messages_per_second": round(messages_per_second, 2),
-                "cache_success_rate_percent": round(cache_success_rate, 2)
-            },
-            "redis_stats": self.redis_client.get_cache_statistics(),
-            "redis_health": self.redis_client.health_check(),
-            "thread_status": {
-                "active": sum(1 for t in self.processing_threads if t.is_alive()),
-                "total": len(self.processing_threads)
-            }
-        }
-    
+ 
     def shutdown(self):
         """Gracefully shutdown the stream processor"""
         logger.info("🛑 Initiating stream processor shutdown...")
@@ -719,7 +638,7 @@ class RedisStreamProcessor:
         # Close all Kafka consumers
         for name, consumer in self.consumers.items():
             try:
-                logger.info(f" Closing {name} consumer...")
+                logger.info(f"Closing {name} consumer...")
                 consumer.close()
             except Exception as e:
                 logger.warning(f"Error closing {name} consumer: {e}")
@@ -728,7 +647,7 @@ class RedisStreamProcessor:
         timeout = self.service_config.shutdown_timeout
         for thread in self.processing_threads:
             try:
-                logger.info(f" Waiting for thread {thread.name} to finish...")
+                logger.info(f"Waiting for thread {thread.name} to finish...")
                 thread.join(timeout=timeout)
                 if thread.is_alive():
                     logger.warning(f"Thread {thread.name} did not finish within timeout")
