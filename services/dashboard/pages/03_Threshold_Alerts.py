@@ -1,10 +1,18 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import redis
 import os
 import json
 from typing import List, Dict
 from datetime import datetime
 import pytz
+
+# Page configuration
+st.set_page_config(
+    page_title="Threshold Alerts - Crop Disease Dashboard",
+    page_icon="🚨",
+    layout="wide"
+)
 
 # Redis configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
@@ -151,8 +159,6 @@ def show_alert_card(alert):
     # Status color
     status_color = "#52c41a" if status == "ACTIVE" else "#d9d9d9"
     
-    card_style = f"border: 2px solid {border_color}; border-radius: 10px; padding: 2em 1.5em 1.5em 1.5em; margin-bottom: 1em; background-color: #fafbfc;"
-    
     # Convert timestamp to Europe/Rome local time
     ts_utc = alert.get('alert_timestamp', '-')
     if ts_utc and ts_utc != '-':
@@ -169,34 +175,107 @@ def show_alert_card(alert):
     else:
         ts_rome = "-"
     
-    # Prepare card HTML content
-    card_html = f'''
-    <div style="{card_style}">
-        <h3 style='margin-bottom:0.5em'>{icon} Alert for <span style='color:{border_color}'><b>{zone_id}</b></span></h3>
-        <div style="display: flex; flex-wrap: wrap; gap: 2em; margin-bottom: 1.5em;">
-            <div>
-                <div style='font-size:1.1em; color:#888;'>Alert Type</div>
-                <div style='font-size:1.5em; font-weight:bold'>{alert_type}</div>
+    # Get severity color for dynamic styling
+    severity_colors = {
+        'HIGH': {'bg': 'linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%)', 'border': '#dc3545'},
+        'MEDIUM': {'bg': 'linear-gradient(135deg, #ffa726 0%, #ff9800 100%)', 'border': '#fd7e14'},
+        'LOW': {'bg': 'linear-gradient(135deg, #4ecdc4 0%, #26a69a 100%)', 'border': '#20c997'},
+        'UNKNOWN': {'bg': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 'border': '#6c757d'}
+    }
+    
+    color_scheme = severity_colors.get(severity, severity_colors['UNKNOWN'])
+    
+    # Create bubble using native Streamlit components
+    with st.container():
+
+        
+        # Create unified gray alert card with data and circle
+        unified_html = f"""
+        <style>
+        @keyframes borderPulse {{
+            0% {{ border-color: {color_scheme['border']}; box-shadow: 0 0 0 0 {color_scheme['border']}40; }}
+            50% {{ border-color: {color_scheme['border']}; box-shadow: 0 0 0 8px {color_scheme['border']}20; }}
+            100% {{ border-color: {color_scheme['border']}; box-shadow: 0 0 0 0 {color_scheme['border']}40; }}
+        }}
+        
+        .message-circle-{severity.lower()} {{
+            background: linear-gradient(145deg, #f8f9fa, #e9ecef);
+            border: 3px solid {color_scheme['border']};
+            border-radius: 50%;
+            width: 180px;
+            height: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            animation: borderPulse 2s infinite;
+            transition: all 0.3s ease;
+            margin: 20px auto 0 auto;
+        }}
+        
+        .message-circle-{severity.lower()}:hover {{
+            animation: none;
+            box-shadow: 0 4px 12px {color_scheme['border']}40;
+        }}
+        </style>
+        
+        <div style="
+            background: linear-gradient(145deg, #ffffff, #f8f9fa);
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            padding: 0;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
+        ">
+            <!-- Header section -->
+            <div style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 6px 6px 0 0;
+                padding: 12px 20px;
+                color: white;
+                font-weight: 600;
+                font-size: 16px;
+                text-align: center;
+                border-bottom: 2px solid #dee2e6;
+            ">
+                <span style="font-size: 18px; margin-right: 8px;">{icon}</span>
+                Alert for <strong>{zone_id}</strong>
             </div>
-            <div>
-                <div style='font-size:1.1em; color:#888;'>Severity</div>
-                <div style='font-size:2em; font-weight:bold; color:{border_color}'>{severity}</div>
-            </div>
-            <div>
-                <div style='font-size:1.1em; color:#888;'>Status</div>
-                <div style='font-size:1.5em; font-weight:bold; color:{status_color}'>{status}</div>
-            </div>
-            <div>
-                <div style='font-size:1.1em; color:#888;'>Time</div>
-                <div style='font-size:1.3em; font-weight:bold'>{ts_rome}</div>
+            
+            <!-- Data section -->
+            <div style="padding: 15px 20px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px; text-align: center; margin-bottom: 15px;">
+                    <div>
+                        <div style="font-size: 11px; color: #6c757d; font-weight: 500; margin-bottom: 5px;">Type</div>
+                        <div style="font-weight: bold; font-size: 14px; color: #212529;">{alert_type}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; color: #6c757d; font-weight: 500; margin-bottom: 5px;">Severity</div>
+                        <div style="font-weight: bold; font-size: 14px; color: {color_scheme['border']};">{severity}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; color: #6c757d; font-weight: 500; margin-bottom: 5px;">Status</div>
+                        <div style="font-weight: bold; font-size: 14px; color: #212529;">{status}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; color: #6c757d; font-weight: 500; margin-bottom: 5px;">Time</div>
+                        <div style="font-weight: bold; font-size: 12px; color: #212529;">{ts_rome}</div>
+                    </div>
+                </div>
+                
+                <!-- Message circle inside the data container -->
+                <div class="message-circle-{severity.lower()}">
+                    <div style="font-weight: bold; color: #212529; font-size: 18px; line-height: 1.4; padding: 16px;">
+                        💬 Alert:<br>
+                        <span style="font-size: 16px; color: #212529; margin-top: 8px; display: block;">
+                            {alert.get('message', 'No message available').replace('Alert: ', '').replace('Weather Alert: ', '')}
+                        </span>
+                    </div>
+                </div>
             </div>
         </div>
-        <div style='margin: 1em 0 1.5em 0; padding: 1em; background: #fff; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 1.1em; color: #222; word-break: break-word;'>
-            <b>Message:</b><br>{alert.get('message', 'No message available')}
-        </div>
-    </div>
-    '''
-    st.markdown(card_html, unsafe_allow_html=True)
+        """
+        components.html(unified_html, height=350)
     st.caption(f"Cached at: {alert.get('cached_at', '-')}, TTL: {alert.get('cache_ttl', '-')}s")
 
 # Get all alerts and apply filters
@@ -218,24 +297,107 @@ for zone_id, alert in all_alerts.items():
     
     filtered_alerts[zone_id] = alert
 
-# Display summary statistics
+# Display summary statistics in a raised rectangle with squares
 if filtered_alerts:
-    col1, col2, col3, col4 = st.columns(4)
+    # Calculate statistics
+    total_alerts = len(filtered_alerts)
+    high_severity_count = sum(1 for alert in filtered_alerts.values() if alert.get('severity') == 'HIGH')
+    sensor_alerts = sum(1 for alert in filtered_alerts.values() if alert.get('alert_type') == 'SENSOR_ANOMALY')
+    weather_alerts = sum(1 for alert in filtered_alerts.values() if alert.get('alert_type') == 'WEATHER_ALERT')
     
-    with col1:
-        st.metric("Total Alerts", len(filtered_alerts))
-    
-    with col2:
-        high_severity = sum(1 for alert in filtered_alerts.values() if alert.get('severity') == 'HIGH')
-        st.metric("High Severity", high_severity)
-    
-    with col3:
-        sensor_alerts = sum(1 for alert in filtered_alerts.values() if alert.get('alert_type') == 'SENSOR_ANOMALY')
-        st.metric("Sensor Alerts", sensor_alerts)
-    
-    with col4:
-        weather_alerts = sum(1 for alert in filtered_alerts.values() if alert.get('alert_type') == 'WEATHER_ALERT')
-        st.metric("Weather Alerts", weather_alerts)
+    # Create a container with raised styling
+    with st.container():
+        # Create a slim header bar
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            padding: 12px 20px;
+            margin: 0 0 15px 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        ">
+            <h3 style="
+                color: white; 
+                margin: 0; 
+                text-align: center; 
+                font-size: 16px; 
+                font-weight: 600;
+            ">
+                📊 Alert Statistics Dashboard
+            </h3>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Create 4 columns with simple metrics in containers
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(145deg, #ffffff, #f8f9fa);
+                border-radius: 8px;
+                padding: 15px;
+                text-align: center;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                border: 1px solid #e9ecef;
+                margin-bottom: 10px;
+            ">
+                <div style="font-size: 24px; color: #495057; margin-bottom: 5px;">📊</div>
+                <div style="font-size: 20px; font-weight: bold; color: #212529; margin-bottom: 3px;">{total_alerts}</div>
+                <div style="font-size: 11px; color: #6c757d; font-weight: 500;">Total Alerts</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(145deg, #ffffff, #f8f9fa);
+                border-radius: 8px;
+                padding: 15px;
+                text-align: center;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                border: 1px solid #e9ecef;
+                margin-bottom: 10px;
+            ">
+                <div style="font-size: 24px; color: #dc3545; margin-bottom: 5px;">🔥</div>
+                <div style="font-size: 20px; font-weight: bold; color: #212529; margin-bottom: 3px;">{high_severity_count}</div>
+                <div style="font-size: 11px; color: #6c757d; font-weight: 500;">High Severity</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(145deg, #ffffff, #f8f9fa);
+                border-radius: 8px;
+                padding: 15px;
+                text-align: center;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                border: 1px solid #e9ecef;
+                margin-bottom: 10px;
+            ">
+                <div style="font-size: 24px; color: #17a2b8; margin-bottom: 5px;">🌡️</div>
+                <div style="font-size: 20px; font-weight: bold; color: #212529; margin-bottom: 3px;">{sensor_alerts}</div>
+                <div style="font-size: 11px; color: #6c757d; font-weight: 500;">Sensor Alerts</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(145deg, #ffffff, #f8f9fa);
+                border-radius: 8px;
+                padding: 15px;
+                text-align: center;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                border: 1px solid #e9ecef;
+                margin-bottom: 10px;
+            ">
+                <div style="font-size: 24px; color: #ffc107; margin-bottom: 5px;">🌦️</div>
+                <div style="font-size: 20px; font-weight: bold; color: #212529; margin-bottom: 3px;">{weather_alerts}</div>
+                <div style="font-size: 11px; color: #6c757d; font-weight: 500;">Weather Alerts</div>
+            </div>
+            """, unsafe_allow_html=True)
 
 # Display alerts
 if not filtered_alerts:

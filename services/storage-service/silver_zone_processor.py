@@ -156,7 +156,7 @@ class SilverZoneProcessor:
                 .outputMode("append") \
                 .format("parquet") \
                 .option("path", f"{self.silver_path}iot/") \
-                .option("checkpointLocation", f"{self.silver_path}iot/_checkpoints/") \
+                .option("checkpointLocation", "/tmp/checkpoints/silver_iot") \
                 .partitionBy("date", "field_id") \
                 .trigger(processingTime="1 minute") \
                 .start()
@@ -184,7 +184,7 @@ class SilverZoneProcessor:
                 .format("kafka") \
                 .option("kafka.bootstrap.servers", self.kafka_bootstrap_servers) \
                 .option("topic", "iot_valid_data") \
-                .option("checkpointLocation", f"{self.silver_path}iot/_kafka_checkpoints/") \
+                .option("checkpointLocation", "/tmp/checkpoints/silver_iot_kafka") \
                 .trigger(processingTime="1 minute") \
                 .start()
             
@@ -242,7 +242,7 @@ class SilverZoneProcessor:
                 .outputMode("append") \
                 .format("parquet") \
                 .option("path", f"{self.silver_path}weather/") \
-                .option("checkpointLocation", f"{self.silver_path}weather/_checkpoints/") \
+                .option("checkpointLocation", "/tmp/checkpoints/silver_weather") \
                 .partitionBy("date", "location") \
                 .trigger(processingTime="1 minute") \
                 .start()
@@ -272,7 +272,7 @@ class SilverZoneProcessor:
                 .format("kafka") \
                 .option("kafka.bootstrap.servers", self.kafka_bootstrap_servers) \
                 .option("topic", "weather_valid_data") \
-                .option("checkpointLocation", f"{self.silver_path}weather/_kafka_checkpoints/") \
+                .option("checkpointLocation", "/tmp/checkpoints/silver_weather_kafka") \
                 .trigger(processingTime="1 minute") \
                 .start()
             
@@ -324,7 +324,7 @@ class SilverZoneProcessor:
                 .outputMode("append") \
                 .format("parquet") \
                 .option("path", f"{self.silver_path}satellite/") \
-                .option("checkpointLocation", f"{self.silver_path}satellite/_checkpoints/") \
+                .option("checkpointLocation", "/tmp/checkpoints/silver_satellite") \
                 .partitionBy("date") \
                 .trigger(processingTime="1 minute") \
                 .start()

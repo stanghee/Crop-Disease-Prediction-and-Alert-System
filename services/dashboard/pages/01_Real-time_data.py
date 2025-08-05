@@ -321,9 +321,9 @@ if sensor_data:
             # Temperature chart in its own container
             st.markdown("""
             <div style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%); 
-                        padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+                        padding: 8px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
                         margin-bottom: 20px;">
-                <h4 style="color: white; margin: 0 0 10px 0; text-align: center; font-size: 16px;">
+                <h4 style="color: white; margin: 0; text-align: center; font-size: 16px;">
                     🌡️ Temperature
                 </h4>
             </div>
@@ -355,9 +355,9 @@ if sensor_data:
             # Humidity chart in its own container
             st.markdown("""
             <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); 
-                        padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+                        padding: 8px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
                         margin-bottom: 20px;">
-                <h4 style="color: white; margin: 0 0 10px 0; text-align: center; font-size: 16px;">
+                <h4 style="color: white; margin: 0; text-align: center; font-size: 16px;">
                     💧 Humidity
                 </h4>
             </div>
@@ -389,9 +389,9 @@ if sensor_data:
             # Soil pH chart in its own container
             st.markdown("""
             <div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); 
-                        padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+                        padding: 8px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
                         margin-bottom: 20px;">
-                <h4 style="color: white; margin: 0 0 10px 0; text-align: center; font-size: 16px;">
+                <h4 style="color: white; margin: 0; text-align: center; font-size: 16px;">
                     🌱 Soil pH
                 </h4>
             </div>

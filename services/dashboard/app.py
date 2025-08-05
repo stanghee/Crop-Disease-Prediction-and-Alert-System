@@ -17,6 +17,13 @@ st.set_page_config(
 
 st.title("🌾 Crop Disease Monitoring - Overview")
 
+# Logo principale al centro
+st.markdown("<br><br>", unsafe_allow_html=True)
+col1, col2, col3 = st.columns([1, 1, 1])
+with col2:
+    st.image("Logo/Logo Crop.png", width=250)
+st.markdown("<br><br>", unsafe_allow_html=True)
+
 # Redis Configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))

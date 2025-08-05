@@ -110,7 +110,7 @@ class AnomalyTrainer:
                 'error': str(e)
             }
     
-    # TODO: We should implement an automatic training schedule after 10 minutes for the demo phase
+    # Automatic training scheduled after 4 minutes from service startup
     def manual_retrain(self):
         """Manual retrain endpoint - uses all available data"""
         logger.info("Manual retraining triggered")

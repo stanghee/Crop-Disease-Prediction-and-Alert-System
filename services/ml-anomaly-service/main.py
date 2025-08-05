@@ -60,6 +60,7 @@ class MLAnomalyService:
         # Service state
         self.is_running = True
         self.streaming_queries = []
+        self._start_time = time.time()
         
     def _create_spark_session(self):
         """Create Spark session - Connected to Spark Cluster"""
@@ -144,7 +145,8 @@ class MLAnomalyService:
                 "service": "ml-anomaly-service",
                 "training": {
                     "last_training": getattr(self.trainer, 'last_training', None),
-                    "model_available": self.predictor is not None
+                    "model_available": self.predictor is not None,
+                    "initial_training_scheduled": hasattr(self, 'training_thread') and self.training_thread.is_alive()
                 },
                 "inference": {
                     "streaming_active": active_streams > 0,
@@ -163,7 +165,7 @@ class MLAnomalyService:
                 "days_of_data": days,
                 "timestamp": datetime.now().isoformat()
             }
-        
+        #TODO: It could be deleted now that we have the training after 4 minutes
         @self.app.post("/train/immediate")
         async def immediate_training():
             """Immediate training with available data"""
@@ -199,6 +201,33 @@ class MLAnomalyService:
                 return {
                     "status": "no_model",
                     "message": "No model loaded yet",
+                    "timestamp": datetime.now().isoformat()
+                }
+        
+        @self.app.get("/training/schedule")
+        async def get_training_schedule():
+            """Get training schedule information"""
+            if hasattr(self, 'training_thread') and self.training_thread.is_alive():
+                # Calculate remaining time (approximate)
+                remaining_seconds = max(0, 240 - (time.time() - getattr(self, '_start_time', time.time())))
+                return {
+                    "status": "scheduled",
+                    "initial_training": {
+                        "scheduled": True,
+                        "delay_minutes": 4,
+                        "remaining_seconds": int(remaining_seconds),
+                        "remaining_minutes": int(remaining_seconds // 60)
+                    },
+                    "daily_training": {
+                        "scheduled": True,
+                        "time": "02:00 AM"
+                    },
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                return {
+                    "status": "no_schedule",
+                    "message": "No training scheduled",
                     "timestamp": datetime.now().isoformat()
                 }
         
@@ -274,10 +303,10 @@ class MLAnomalyService:
                     query.stop()
             self.streaming_queries = []
     
+    #TODO: It is necessary, it could be good to mantain but then we need to explain why
     def start_scheduled_training(self):
         """Start scheduled training job"""
         # Schedule daily training at 2 AM
-        # TODO: change this part 
         schedule.every().day.at("02:00").do(lambda: self._train_and_reload(30))
         
         def run_schedule():
@@ -289,23 +318,31 @@ class MLAnomalyService:
         schedule_thread.start()
         logger.info("Scheduled training started (daily at 2 AM)")
     
-    # The train at the start of the service is used for the demo, in production the first train should be done after a certain amount of data avaiable / or time 
+    # The train start after 4 minutes to allow data collection
     def initial_setup(self):
-        """Initial setup - train model and start inference"""
+        """Initial setup - schedule training after 4 minutes and start inference"""
         logger.info("Performing initial setup...")
         
-        # Try to train initial model
-        # TODO: change this part to force it to train after 5 minutes (for the demo phase)
-        result = self.trainer.manual_retrain()
+        # Schedule training after 4 minutes to allow data collection
+        def delayed_training():
+            logger.info("Starting delayed training after 4 minutes...")
+            result = self.trainer.manual_retrain()
+            
+            if result['status'] == 'success':
+                logger.info("Delayed training successful")
+                # Initialize predictor
+                self.predictor = StreamingPredictor(self.spark)
+                # Start streaming
+                self._start_streaming()
+            else:
+                logger.warning("Delayed training failed - service will run without ML")
         
-        if result['status'] == 'success':
-            logger.info("Initial training successful")
-            # Initialize predictor
-            self.predictor = StreamingPredictor(self.spark)
-            # Start streaming
-            self._start_streaming()
-        else:
-            logger.warning("Initial training failed - service will run without ML")
+        # Schedule training after 4 minutes
+        self.training_thread = threading.Timer(240, delayed_training)  # 240 seconds = 4 minutes
+        self.training_thread.daemon = True
+        self.training_thread.start()
+        
+        logger.info("Training scheduled to start in 4 minutes...")
     
     def shutdown(self):
         """Graceful shutdown"""
