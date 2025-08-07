@@ -6,6 +6,7 @@ import json
 from typing import List, Dict
 from datetime import datetime
 import pytz
+from streamlit_autorefresh import st_autorefresh
 
 # Page configuration
 st.set_page_config(
@@ -13,6 +14,37 @@ st.set_page_config(
     page_icon="🚨",
     layout="wide"
 )
+
+# Custom CSS to ensure sidebar navigation is always visible
+st.markdown("""
+<style>
+    /* Make sidebar wider */
+    [data-testid="stSidebar"] {
+        min-width: 320px !important;
+        max-width: 380px !important;
+    }
+    
+    /* Ensure navigation is always visible */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] {
+        max-height: none !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+    
+    /* Remove any height restrictions on navigation list */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] ul {
+        max-height: none !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+    
+    /* Ensure all navigation items are visible */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] li {
+        margin-bottom: 1px !important;
+        display: block !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Redis configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
@@ -55,12 +87,8 @@ st.markdown("*Monitor and manage real-time alerts for sensor anomalies and weath
 
 redis_client = get_redis_client()
 
-# Automatic refresh every 10s
-st_autorefresh = st.experimental_rerun if st.experimental_get_query_params().get("refresh") else None
-st.experimental_set_query_params(refresh="1")
-st_autorefresh = st_autorefresh or (lambda: None)
-st_autorefresh()
-st.experimental_set_query_params()
+# Auto-refresh every 10 seconds for real-time updates
+st_autorefresh(interval=10 * 1000, key="threshold_alerts_autorefresh")
 
 # Sidebar for zone selection and filters
 st.sidebar.header("Filter Settings")
@@ -217,6 +245,10 @@ def show_alert_card(alert):
             animation: none;
             box-shadow: 0 4px 12px {color_scheme['border']}40;
         }}
+        
+        * {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }}
         </style>
         
         <div style="
@@ -266,7 +298,7 @@ def show_alert_card(alert):
                 <!-- Message circle inside the data container -->
                 <div class="message-circle-{severity.lower()}">
                     <div style="font-weight: bold; color: #212529; font-size: 18px; line-height: 1.4; padding: 16px;">
-                        💬 Alert:<br>
+                        Alert:<br>
                         <span style="font-size: 16px; color: #212529; margin-top: 8px; display: block;">
                             {alert.get('message', 'No message available').replace('Alert: ', '').replace('Weather Alert: ', '')}
                         </span>
@@ -322,6 +354,7 @@ if filtered_alerts:
                 text-align: center; 
                 font-size: 16px; 
                 font-weight: 600;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             ">
                 📊 Alert Statistics Dashboard
             </h3>
@@ -341,6 +374,7 @@ if filtered_alerts:
                 box-shadow: 0 4px 8px rgba(0,0,0,0.1);
                 border: 1px solid #e9ecef;
                 margin-bottom: 10px;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             ">
                 <div style="font-size: 24px; color: #495057; margin-bottom: 5px;">📊</div>
                 <div style="font-size: 20px; font-weight: bold; color: #212529; margin-bottom: 3px;">{total_alerts}</div>
@@ -358,6 +392,7 @@ if filtered_alerts:
                 box-shadow: 0 4px 8px rgba(0,0,0,0.1);
                 border: 1px solid #e9ecef;
                 margin-bottom: 10px;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             ">
                 <div style="font-size: 24px; color: #dc3545; margin-bottom: 5px;">🔥</div>
                 <div style="font-size: 20px; font-weight: bold; color: #212529; margin-bottom: 3px;">{high_severity_count}</div>
@@ -375,6 +410,7 @@ if filtered_alerts:
                 box-shadow: 0 4px 8px rgba(0,0,0,0.1);
                 border: 1px solid #e9ecef;
                 margin-bottom: 10px;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             ">
                 <div style="font-size: 24px; color: #17a2b8; margin-bottom: 5px;">🌡️</div>
                 <div style="font-size: 20px; font-weight: bold; color: #212529; margin-bottom: 3px;">{sensor_alerts}</div>
@@ -392,6 +428,7 @@ if filtered_alerts:
                 box-shadow: 0 4px 8px rgba(0,0,0,0.1);
                 border: 1px solid #e9ecef;
                 margin-bottom: 10px;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             ">
                 <div style="font-size: 24px; color: #ffc107; margin-bottom: 5px;">🌦️</div>
                 <div style="font-size: 20px; font-weight: bold; color: #212529; margin-bottom: 3px;">{weather_alerts}</div>

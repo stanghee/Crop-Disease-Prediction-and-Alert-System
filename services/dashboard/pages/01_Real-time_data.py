@@ -19,6 +19,37 @@ st.set_page_config(
     layout="wide"
 )
 
+# Custom CSS to ensure sidebar navigation is always visible
+st.markdown("""
+<style>
+    /* Make sidebar wider */
+    [data-testid="stSidebar"] {
+        min-width: 320px !important;
+        max-width: 380px !important;
+    }
+    
+    /* Ensure navigation is always visible */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] {
+        max-height: none !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+    
+    /* Remove any height restrictions on navigation list */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] ul {
+        max-height: none !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+    
+    /* Ensure all navigation items are visible */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] li {
+        margin-bottom: 1px !important;
+        display: block !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Redis Configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
