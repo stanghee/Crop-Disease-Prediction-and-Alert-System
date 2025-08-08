@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ML Training Job - Isolation Forest for anomaly detection
+ML Training Job - Kmeans for anomaly detection
 Handles training with any amount of available data (not just 30 days)
 """
 
@@ -20,7 +20,7 @@ from pyspark.sql.types import DoubleType
 logger = logging.getLogger(__name__)
 
 class AnomalyTrainer:
-    """Train Isolation Forest model on Gold zone data"""
+    """Train Kmeans model on Gold zone data"""
     
     def __init__(self, spark: SparkSession):
         self.spark = spark
@@ -32,7 +32,7 @@ class AnomalyTrainer:
         Args:
             days_back: Number of days of historical data to use
             min_records: Minimum records needed for training
-            k: Number of clusters (overrides config if provided)
+            k: Number of clusters (check config)
         """
         logger.info(f"Starting training with {days_back} days of data")
         try:
@@ -53,17 +53,16 @@ class AnomalyTrainer:
             for f in CORE_FEATURES:
                 median = gold_df.approxQuantile(f, [0.5], 0.01)[0]
                 gold_df = gold_df.na.fill({f: median})
-            # Filtra righe con ancora null
+            # Filter out rows with null values
             for f in CORE_FEATURES:
                 gold_df = gold_df.filter(col(f).isNotNull())
-            # Cast esplicito a DoubleType per tutte le feature
+            # Double type
             for f in CORE_FEATURES:
                 gold_df = gold_df.withColumn(f, col(f).cast(DoubleType()))
-            # Assembla features
+            # Assemble features
             assembler = VectorAssembler(inputCols=CORE_FEATURES, outputCol="features_vec")
             assembled_df = assembler.transform(gold_df)
-            # (Rimosso filtro su size(features_vec))
-            # Scale features (optional, but common for KMeans)
+            # Scale features 
             scaler = SparkStandardScaler(inputCol="features_vec", outputCol="scaled_features", withMean=True, withStd=True)
             scaler_model = scaler.fit(assembled_df)
             scaled_df = scaler_model.transform(assembled_df)
@@ -71,14 +70,13 @@ class AnomalyTrainer:
             k_val = k if k is not None else KMEANS_CONFIG['k']
             kmeans = KMeans(featuresCol="scaled_features", k=k_val, maxIter=KMEANS_CONFIG['maxIter'], seed=KMEANS_CONFIG['seed'])
             model = kmeans.fit(scaled_df)
-            # Calcola metriche semplici usando K-Means cost invece di UDF personalizzate
-            # Questo evita problemi di serializzazione sui worker distribuiti
+
             cost = model.summary.trainingCost
             logger.info(f"Training completed with K-Means cost: {cost}")
             
-            # Usa metriche semplificate che non richiedono UDF
-            avg_distance = cost / scaled_df.count() if scaled_df.count() > 0 else 0.0
-            max_distance = cost  # Approssimazione basata sul costo totale
+            avg_distance = cost / scaled_df.count() if scaled_df.count() > 0 else 0.0 #TODO: Can be used for anomaly detection as a threshold (not in the demo pahse because we have to force anomaly detection)
+            max_distance = cost  # TODO: fix it to the correct max distance 
+
             # Model metadata
             metadata = {
                 'model_version': f"v{datetime.now().strftime('%Y-%m-%d_%H-%M')}",
@@ -96,7 +94,7 @@ class AnomalyTrainer:
                     'max_distance': float(max_distance)
                 }
             }
-            # Salva modello Spark ML
+            # Save model
             model_path = self.model_manager.save_model(model, scaler_model, metadata)
             logger.info(f"Model saved to: {model_path}")
             return {
@@ -112,6 +110,7 @@ class AnomalyTrainer:
                 'error': str(e)
             }
     
+    # Automatic training scheduled after 4 minutes from service startup
     def manual_retrain(self):
         """Manual retrain endpoint - uses all available data"""
         logger.info("Manual retraining triggered")

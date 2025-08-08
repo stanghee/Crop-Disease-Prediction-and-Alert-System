@@ -29,20 +29,35 @@ class SparkStreamingAlertService:
         self.is_running = False
         logger.info("✅ Service initialized")
 
-#TODO: fix the env variables, we should use the env variables from the docker-compose.yml file     
     def _create_spark_session(self) -> SparkSession:
-        """Create Spark session with Kafka support"""
+        """Create Spark session with Kafka support - Connected to Spark Cluster"""
+        # Environment variables with defaults (allineati con docker-compose.yml)
         spark_master_url = os.getenv("SPARK_MASTER_URL", "spark://spark-master:7077")
+        driver_host = os.getenv("SPARK_DRIVER_HOST", "crop-disease-service")
+        driver_port = os.getenv("SPARK_DRIVER_PORT", "4042")
+        driver_memory = os.getenv("SPARK_DRIVER_MEMORY", "512m")
+        executor_memory = os.getenv("SPARK_EXECUTOR_MEMORY", "512m")
+        executor_cores = os.getenv("SPARK_EXECUTOR_CORES", "1")
+        cores_max = os.getenv("SPARK_CORES_MAX", "1")
         
-        spark = SparkSession.builder \
+        # Build Spark session
+        spark_builder = SparkSession.builder \
             .appName("CropDiseaseAlerting_Simple") \
-            .master(spark_master_url) \
-            .config("spark.driver.host", "crop-disease-service") \
-            .config("spark.driver.port", "4044") \
-            .config("spark.driver.memory", "512m") \
-            .config("spark.executor.memory", "512m") \
-            .config("spark.executor.cores", "1") \
-            .config("spark.cores.max", "2") \
+            .master(spark_master_url)
+        
+        # Add cluster-specific configurations only if using cluster
+        if spark_master_url.startswith("spark://"):
+            spark_builder = spark_builder \
+                .config("spark.driver.host", driver_host) \
+                .config("spark.driver.port", driver_port) \
+                .config("spark.driver.bindAddress", "0.0.0.0") \
+                .config("spark.cores.max", cores_max)
+        
+        # Configure Spark with environment variables
+        spark = spark_builder \
+            .config("spark.driver.memory", driver_memory) \
+            .config("spark.executor.memory", executor_memory) \
+            .config("spark.executor.cores", executor_cores) \
             .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.postgresql:postgresql:42.7.0") \
             .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
             .config("spark.sql.adaptive.enabled", "false") \
@@ -181,8 +196,13 @@ class SparkStreamingAlertService:
             StructField("temp_c", DoubleType(), True),
             StructField("humidity", DoubleType(), True),
             StructField("wind_kph", DoubleType(), True),
+            StructField("uv", DoubleType(), True),
+            StructField("precip_mm", DoubleType(), True),
             StructField("temp_valid", BooleanType(), True),
             StructField("humidity_valid", BooleanType(), True),
+            StructField("wind_valid", BooleanType(), True),
+            StructField("uv_valid", BooleanType(), True),
+            StructField("precip_valid", BooleanType(), True),
             StructField("coordinates_valid", BooleanType(), True),
             StructField("timestamp", StringType(), True)
         ])
@@ -197,13 +217,17 @@ class SparkStreamingAlertService:
             ((col("temp_c") < 0) & col("temp_valid")) |
             ((col("temp_c") > 45) & col("temp_valid")) |
             # Wind alerts
-            (col("wind_kph") > 80)
+            ((col("wind_kph") > 80) & col("wind_valid")) |
+            # UV alerts
+            ((col("uv") >= 8) & col("uv_valid")) |
+            # Precipitation alerts
+            ((col("precip_mm") >= 50) & col("precip_valid"))
         ).withColumn(
             "alert_type", lit("WEATHER_ALERT")
         ).withColumn(
             "severity",
-            when((col("temp_c") < -10) | (col("temp_c") > 50) | (col("wind_kph") > 100), "HIGH")
-            .otherwise("MEDIUM")
+            when((col("temp_c") < -10) | (col("temp_c") > 50) | (col("wind_kph") > 100) | (col("uv") >= 11) | (col("precip_mm") >= 100), "HIGH")
+            .otherwise("MEDIUM") #TODO: Check how we are setting the severity
         ).withColumn(
             "message",
             concat(
@@ -211,6 +235,8 @@ class SparkStreamingAlertService:
                 when(col("temp_c") < 0, concat(lit("Low temperature "), col("temp_c"), lit("°C")))
                 .when(col("temp_c") > 45, concat(lit("High temperature "), col("temp_c"), lit("°C")))
                 .when(col("wind_kph") > 80, concat(lit("High wind speed "), col("wind_kph"), lit(" km/h")))
+                .when(col("uv") >= 8, concat(lit("High UV index "), col("uv")))
+                .when(col("precip_mm") >= 50, concat(lit("Heavy rainfall "), col("precip_mm"), lit(" mm")))
                 .otherwise(lit("Weather threshold exceeded"))
             )
         ).withColumn(

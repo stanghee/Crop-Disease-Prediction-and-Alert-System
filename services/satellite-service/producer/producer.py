@@ -11,7 +11,7 @@ from kafka import KafkaProducer
 from PIL import Image
 from zoneinfo import ZoneInfo
 
-# === CONFIG ===
+# CONFIG 
 client_id = os.getenv('COPERNICUS_CLIENT_ID')
 client_secret = os.getenv('COPERNICUS_CLIENT_SECRET')
 
@@ -30,7 +30,7 @@ bbox = [
     float(os.getenv('BBOX_MAX_LAT', '45.281667'))
 ]
 
-# === AUTHENTICATION ===
+# AUTHENTICATION 
 def get_oauth_session():
     client = BackendApplicationClient(client_id=client_id)
     oauth = OAuth2Session(client=client)
@@ -41,7 +41,7 @@ def get_oauth_session():
     )
     return oauth
 
-# === RGB EVALSCRIPT ===
+# RGB EVALSCRIPT 
 evalscript_rgb = """
 //VERSION=3
 function clamp(value, min, max) {
@@ -62,11 +62,11 @@ function evaluatePixel(sample) {
 }
 """
 
-# === MAIN FUNCTION ===
+# MAIN FUNCTION 
 def fetch_and_send():
     rome_tz = ZoneInfo("Europe/Rome")
     current_time = datetime.now(rome_tz)
-    print("📡 Acquiring image:", current_time, flush=True)
+    print(" Acquiring image:", current_time, flush=True)
     oauth = get_oauth_session()
 
     request = {
@@ -128,16 +128,16 @@ def fetch_and_send():
     producer.send(kafka_topic, message)
     producer.flush()
 
-    print("✅ Image sent to Kafka.")
+    print(" Image sent to Kafka.")
 
-# === EXECUTE IMMEDIATELY ===
+# EXECUTE IMMEDIATELY
 fetch_and_send()
 
-# === EVERY MINUTE === 
+# EVERY MINUTE
 # Because we are supposed to use drone to get the image, but it is costly so we use satellite
 schedule.every(1).minutes.do(fetch_and_send)
 
-print("⏱ Listening every minute...", flush=True)
+print(" Listening every minute...", flush=True)
 while True:
     schedule.run_pending()
     time.sleep(1)

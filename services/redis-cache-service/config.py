@@ -50,16 +50,9 @@ class CacheConfig:
     # Key patterns
     sensor_latest_pattern: str = "sensors:latest:{field_id}"
     weather_latest_pattern: str = "weather:latest:{location}"
-    alerts_active_key: str = "alerts:active" #TODO: check if this is correct
     alerts_latest_pattern: str = "alerts:latest:{zone_id}"
-    predictions_latest_key: str = "predictions:latest"
     prediction_latest_pattern: str = "predictions:latest:{field_id}"
     
-    # Aggregation patterns
-    sensor_hourly_pattern: str = "sensors:hourly:{field_id}:{hour}"
-    weather_hourly_pattern: str = "weather:hourly:{location}:{hour}"
-    
-
 
 @dataclass
 class ServiceConfig:
@@ -97,10 +90,9 @@ class AppConfig:
 # Kafka topics configuration
 KAFKA_TOPICS = {
     "sensor_data": "iot_valid_data",
-    "weather_data": "weather_valid_data",
-    # Future topics for additional data streams
+    "weather_data": "weather_valid_data",  
     "ml_anomalies": "ml-anomalies",
-    "alerts_anomalies": "alerts-anomalies" #TODO: change this with the correct topic
+    "alerts_anomalies": "alerts-anomalies" 
 }
 
 # Redis key prefixes for different data types
@@ -113,8 +105,8 @@ REDIS_PREFIXES = {
 }
 
 # Data validation schemas (basic validation)
-SENSOR_REQUIRED_FIELDS = ["field_id", "temperature", "humidity", "soil_ph", "timestamp"]
-WEATHER_REQUIRED_FIELDS = ["location", "temp_c", "humidity", "timestamp"]
+SENSOR_REQUIRED_FIELDS = ["field_id", "location", "latitude", "longitude", "temperature", "humidity", "soil_ph"]
+WEATHER_REQUIRED_FIELDS = ["location", "temp_c", "humidity", "wind_kph", "uv", "condition", "precip_mm"]
 
 # ML anomaly required fields
 ML_ANOMALY_REQUIRED_FIELDS = [
@@ -141,11 +133,6 @@ ALERT_REQUIRED_FIELDS = [
 
 # Global configuration instance
 config_instance = AppConfig()
-
-
-def get_config() -> AppConfig:
-    """Get the global configuration instance"""
-    return config_instance
 
 
 def get_redis_config() -> RedisConfig:

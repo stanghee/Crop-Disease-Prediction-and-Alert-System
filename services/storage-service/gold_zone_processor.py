@@ -4,7 +4,7 @@ Gold Zone Processor - ML Features with Sliding Window
 Processes Silver zone data into ML-ready features:
 - Sliding window aggregations (10 minutes)
 - Location-based sensor-weather join
-- 3 records per file (one per field)
+- 3 records per file (one per field) #TODO: check if we need to change this
 - Optimized for machine learning
 """
 
@@ -29,8 +29,8 @@ class GoldZoneProcessor:
     
     def __init__(self, spark: SparkSession):
         self.spark = spark
-        self.silver_path = "s3a://silver/"
-        self.gold_path = "s3a://gold/"
+        self.silver_path = os.getenv("SILVER_PATH", "s3a://silver/")
+        self.gold_path = os.getenv("GOLD_PATH", "s3a://gold/")
         self.sliding_window_minutes = 10
 
   #TODO: check uv info and condition info from the weather schema, enviroment stress scoring and coombined risk score should be removed
@@ -40,7 +40,7 @@ class GoldZoneProcessor:
         Create ML features using sliding window approach (10 minutes)
         - Aggregates sensor and weather data for last 10 minutes
         - Joins by location to ensure data consistency
-        - Creates exactly 3 records (one per field)
+        - Creates exactly 3 records (one per field) #TODO: check if we need to change this
         - Outputs to ml_feature folder with timestamp - append mode
         """
         logger.info(f"Creating ML features with {self.sliding_window_minutes}-minute sliding window...")
@@ -95,7 +95,10 @@ class GoldZoneProcessor:
                     
                     # Timestamp metrics
                     max("timestamp_parsed").alias("sensor_last_reading"),
-                    min("timestamp_parsed").alias("sensor_first_reading")
+                    min("timestamp_parsed").alias("sensor_first_reading"),
+                    
+                    # Temporal features from silver
+                    mode("month").alias("sensor_dominant_month")
                 ) \
                 .withColumn(
                     "sensor_temp_range", col("sensor_max_temperature") - col("sensor_min_temperature")
@@ -147,6 +150,13 @@ class GoldZoneProcessor:
                     min("uv").alias("weather_min_uv_index"),
                     max("uv").alias("weather_max_uv_index"),
                     
+                    # Precipitation metrics (added from silver)
+                    avg("precip_mm").alias("weather_avg_precipitation"),
+                    stddev("precip_mm").alias("weather_std_precipitation"),
+                    min("precip_mm").alias("weather_min_precipitation"),
+                    max("precip_mm").alias("weather_max_precipitation"),
+                    sum("precip_mm").alias("weather_total_precipitation"),
+                    
                     # Condition metrics
                     mode("condition").alias("weather_dominant_condition"),
                     count("*").alias("weather_readings_count"),
@@ -166,7 +176,10 @@ class GoldZoneProcessor:
                 ) \
                 .withColumn(
                     "weather_uv_range", col("weather_max_uv_index") - col("weather_min_uv_index")
-                )
+                ) \
+                .withColumn(
+                    "weather_precip_range", col("weather_max_precipitation") - col("weather_min_precipitation")
+                ) 
             
             # Join sensor and weather data by location
             ml_features = sensor_aggregated \
@@ -177,20 +190,6 @@ class GoldZoneProcessor:
                 ) \
                 .withColumn(
                     "humidity_differential", abs(col("sensor_avg_humidity") - col("weather_avg_humidity"))
-                ) \
-                .withColumn(
-                    # Environmental stress indicators
-                    "environmental_stress_score",
-                    when((col("temp_differential") > 10) | (col("humidity_differential") > 20), "HIGH")
-                    .when((col("temp_differential") > 5) | (col("humidity_differential") > 10), "MEDIUM")
-                    .otherwise("LOW")
-                ) \
-                .withColumn(
-                    # Combined risk assessment
-                    "combined_risk_score",
-                    when((col("sensor_anomaly_rate") > 0.1) | (col("environmental_stress_score") == "HIGH"), "HIGH")
-                    .when((col("sensor_anomaly_rate") > 0.05) | (col("environmental_stress_score") == "MEDIUM"), "MEDIUM")
-                    .otherwise("LOW")
                 ) \
                 .withColumn(
                     # Data freshness (minutes since last reading)
@@ -213,6 +212,13 @@ class GoldZoneProcessor:
                 ) \
                 .withColumn(
                     "window_duration_minutes", lit(self.sliding_window_minutes)
+                ) \
+                .withColumn(
+                    # Temporal cyclic features for month (sin and cos) - using sensor dominant month
+                    "temporal_feature_ml_sin", sin(2 * pi() * (col("sensor_dominant_month") - 1) / 12)
+                ) \
+                .withColumn(
+                    "temporal_feature_ml_cos", cos(2 * pi() * (col("sensor_dominant_month") - 1) / 12)
                 )
             
             # Ensure we have exactly 3 records (one per field)
@@ -255,6 +261,7 @@ class GoldZoneProcessor:
                     col("sensor_anomaly_count"),
                     col("sensor_anomaly_rate"),
                     col("sensor_data_quality_score"),
+                    col("sensor_dominant_month"),
                     col("weather_avg_temperature"),
                     col("weather_std_temperature"),
                     col("weather_min_temperature"),
@@ -275,21 +282,27 @@ class GoldZoneProcessor:
                     col("weather_min_uv_index"),
                     col("weather_max_uv_index"),
                     col("weather_uv_range"),
+                    col("weather_avg_precipitation"),
+                    col("weather_std_precipitation"),
+                    col("weather_min_precipitation"),
+                    col("weather_max_precipitation"),
+                    col("weather_precip_range"),
+                    col("weather_total_precipitation"),
                     col("weather_dominant_condition"),
                     col("weather_readings_count"),
                     col("temp_differential"),
                     col("humidity_differential"),
-                    col("environmental_stress_score"),
-                    col("combined_risk_score"),
                     col("sensor_data_freshness_minutes"),
                     col("weather_data_freshness_minutes"),
+                    col("temporal_feature_ml_sin"),
+                    col("temporal_feature_ml_cos"),
                     col("processing_timestamp"),
                     col("window_start_time"),
                     col("window_end_time"),
                     col("window_duration_minutes")
                 )
             
-            # FIRST: Publish to Kafka for real-time ML processing (before MinIO write)
+            # Publish to Kafka for real-time ML processing 
             logger.info("Publishing ML features to Kafka topic 'gold-ml-features'")
             kafka_success = False
             try:
@@ -306,23 +319,23 @@ class GoldZoneProcessor:
                 logger.error(f"Failed to publish to Kafka: {kafka_error}")
                 # Don't fail the entire process if Kafka write fails
 
-            # SECOND: Try to write to MinIO (optional - for data lake storage)
+            # Write to MinIO 
             minio_success = False
             try:
                 # Generate timestamp for file naming
                 current_timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M")
-                output_dir = f"{self.gold_path}ml_feature/tmp_{current_timestamp_str}"  # directory temporanea
+                output_dir = f"{self.gold_path}ml_feature/tmp_{current_timestamp_str}"  
                 final_filename = f"ml_feature_{current_timestamp_str}.snappy.parquet"
                 final_path = f"{self.gold_path}ml_feature/{final_filename}"
 
-                # Scrivi in una sola partizione
+                # Scrivi in una sola partizione #TODO: check if we need to change this
                 final_ml_features.coalesce(1).write \
                     .format("parquet") \
                     .option("compression", "snappy") \
                     .mode("overwrite") \
                     .save(output_dir)
 
-                # Trova il file part-*.parquet e rinominalo
+                # Trova il file part-*.parquet e rinominalo #TODO: check if we need to change this
                 import os
                 from py4j.java_gateway import java_import
                 java_import(self.spark._jvm, "org.apache.hadoop.fs.Path")
@@ -376,96 +389,3 @@ class GoldZoneProcessor:
                 StructField("processing_timestamp", TimestampType(), True)
             ])
             return self.spark.createDataFrame([], schema)
-    
-    def get_ml_features_summary(self) -> Dict[str, Any]:
-        """
-        Get summary of ML features processing
-        """
-        try:
-            # List all ML feature files
-            ml_feature_path = f"{self.gold_path}ml_feature/"
-            
-            # Try to read the most recent file
-            try:
-                # Read all files in ml_feature directory and get the most recent
-                all_features = self.spark.read.parquet(f"{ml_feature_path}*.snappy.parquet")
-                
-                # Get the most recent data by processing_timestamp
-                latest_features = all_features.orderBy(col("processing_timestamp").desc()).limit(3)
-                
-                summary = latest_features.agg(
-                    count("*").alias("total_records"),
-                    sum(when(col("combined_risk_score") == "HIGH", 1).otherwise(0)).alias("high_risk_count"),
-                    sum(when(col("combined_risk_score") == "MEDIUM", 1).otherwise(0)).alias("medium_risk_count"),
-                    sum(when(col("combined_risk_score") == "LOW", 1).otherwise(0)).alias("low_risk_count"),
-                    avg("sensor_data_quality_score").alias("avg_data_quality"),
-                    avg("temp_differential").alias("avg_temp_differential"),
-                    avg("humidity_differential").alias("avg_humidity_differential")
-                ).collect()[0]
-                
-                return {
-                    "total_records": int(summary.total_records or 0),
-                    "high_risk_count": int(summary.high_risk_count or 0),
-                    "medium_risk_count": int(summary.medium_risk_count or 0),
-                    "low_risk_count": int(summary.low_risk_count or 0),
-                    "avg_data_quality": float(summary.avg_data_quality or 0),
-                    "avg_temp_differential": float(summary.avg_temp_differential or 0),
-                    "avg_humidity_differential": float(summary.avg_humidity_differential or 0),
-                    "processing_timestamp": datetime.now().isoformat()
-                }
-                
-            except Exception as e:
-                logger.warning(f"Could not read ML feature data for summary: {e}")
-                return {
-                    "total_records": 0,
-                    "error": "No ML feature data available",
-                    "processing_timestamp": datetime.now().isoformat()
-                }
-                
-        except Exception as e:
-            logger.error(f"Error getting ML feature summary: {e}")
-            return {"error": str(e)}
-    
-    def run_ml_features_processing(self) -> Dict[str, Any]:
-        """
-        Run ML feature processing with sliding window
-        """
-        logger.info("Starting ML feature processing with sliding window...")
-        
-        try:
-            # Create ML features
-            ml_features_df = self.create_ml_features_sliding_window()
-            
-            # Get summary
-            summary = self.get_ml_features_summary()
-            
-            results = {
-                "ml_feature_created": True,
-                "records_generated": ml_features_df.count(),
-                "summary": summary,
-                "processing_timestamp": datetime.now().isoformat()
-            }
-            
-            logger.info("ML feature processing completed successfully")
-            return results
-            
-        except Exception as e:
-            logger.error(f"Error in ML feature processing: {e}")
-            return {
-                "ml_feature_created": False,
-                "error": str(e),
-                "processing_timestamp": datetime.now().isoformat()
-            }
-    
-    # Legacy methods for compatibility (simplified)
-    def run_all_gold_processing(self, batch_date: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Legacy method - now just runs ML features processing
-        """
-        return self.run_ml_features_processing()
-    
-    def get_dashboard_summary(self) -> Dict[str, Any]:
-        """
-        Legacy method - returns ML features summary
-        """
-        return self.get_ml_features_summary() 

@@ -155,16 +155,15 @@ services:
     build: ./services/weather-service/producer
     volumes:
       - ./services/weather-service/producer/producer.py:/app/producer.py
-      - ./services/weather-service/producer/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
         condition: service_healthy
     environment:
-      - API_KEY=${WEATHER_API_KEY}
+      - API_KEY=${WEATHER_API_KEY} # from .env file
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - TIMEZONE=Europe/Rome
-      - DEFAULT_LOCATION=${DEFAULT_LOCATION}
+      - DEFAULT_LOCATION=${DEFAULT_LOCATION} # from .env file
     restart: unless-stopped
     mem_limit: 256m
     mem_reservation: 128m
@@ -174,7 +173,7 @@ services:
   sensor-producer:
     build: ./services/sensor-service/producer
     volumes:
-      - ./services/sensor-service/producer/entrypoint.sh:/app/entrypoint.sh
+      - ./services/sensor-service/producer/producer.py:/app/producer.py
     working_dir: /app
     depends_on:
       kafka:
@@ -182,7 +181,7 @@ services:
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - TIMEZONE=Europe/Rome
-      - ANOMALY_PROBABILITY=0.5 # TODO: change with env variable
+      - ANOMALY_PROBABILITY=0.5 # TODO: we should change with env variable 
     restart: unless-stopped
     mem_limit: 256m
     mem_reservation: 128m
@@ -193,7 +192,6 @@ services:
     build: ./services/satellite-service/producer
     volumes:
       - ./services/satellite-service/producer/producer.py:/app/producer.py
-      - ./services/satellite-service/producer/entrypoint.sh:/app/entrypoint.sh
     working_dir: /app
     depends_on:
       kafka:
@@ -206,10 +204,10 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
       MINIO_HOST: minio
       MINIO_PORT: 9000
-      COPERNICUS_CLIENT_ID: ${COPERNICUS_CLIENT_ID}
-      COPERNICUS_CLIENT_SECRET: ${COPERNICUS_CLIENT_SECRET}
+      COPERNICUS_CLIENT_ID: ${COPERNICUS_CLIENT_ID} # from .env file
+      COPERNICUS_CLIENT_SECRET: ${COPERNICUS_CLIENT_SECRET} # from .env file
       # Configurazione area geografica (default: Verona) 
-      # TODO: change with env variables
+      # TODO: we should change with env variables
       BBOX_MIN_LON: ${BBOX_MIN_LON:-10.894444}
       BBOX_MIN_LAT: ${BBOX_MIN_LAT:-45.266667}
       BBOX_MAX_LON: ${BBOX_MAX_LON:-10.909444}
@@ -256,6 +254,7 @@ services:
       # Data lake paths (override default s3a URIs used in code)
       BRONZE_PATH: s3a://bronze/
       SILVER_PATH: s3a://silver/
+      GOLD_PATH: s3a://gold/
     ports:
       - "4040:4040"  # Spark UI
     command: ["python", "main_service.py"]

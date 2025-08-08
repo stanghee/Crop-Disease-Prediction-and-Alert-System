@@ -103,14 +103,6 @@ class RedisStreamProcessor:
             alerts_thread.start()
             self.processing_threads.append(alerts_thread)
             
-            # Start statistics monitoring thread
-            stats_thread = threading.Thread(
-                target=self._monitor_statistics,
-                name="StatsMonitor",
-                daemon=True
-            )
-            stats_thread.start()
-            self.processing_threads.append(stats_thread)
             
             logger.success(f"✅ Started {len(self.processing_threads)} processing threads")
             
@@ -126,7 +118,7 @@ class RedisStreamProcessor:
     
     def _main_monitoring_loop(self):
         """Main monitoring loop - keeps the service alive"""
-        logger.info(" Main monitoring loop started")
+        logger.info("Main monitoring loop started")
         
         try:
             while not self.shutdown_event.is_set():
@@ -134,7 +126,7 @@ class RedisStreamProcessor:
                 active_threads = sum(1 for t in self.processing_threads if t.is_alive())
                 
                 if active_threads < len(self.processing_threads):
-                    logger.warning(f" Only {active_threads}/{len(self.processing_threads)} threads active")
+                    logger.warning(f"Only {active_threads}/{len(self.processing_threads)} threads active")
                 
                 # Log statistics periodically
                 if self.stats["messages_processed"] > 0:
@@ -156,7 +148,7 @@ class RedisStreamProcessor:
     
     def _process_sensor_stream(self):
         """Process sensor data stream from Kafka to Redis"""
-        logger.info(" Starting sensor stream processor...")
+        logger.info("Starting sensor stream processor...")
         
         consumer = None
         try:
@@ -229,7 +221,7 @@ class RedisStreamProcessor:
         finally:
             if consumer:
                 consumer.close()
-            logger.info(" Sensor stream processor stopped")
+            logger.info("Sensor stream processor stopped")
     
     def _process_weather_stream(self):
         """Process weather data stream from Kafka to Redis"""
@@ -306,16 +298,13 @@ class RedisStreamProcessor:
         finally:
             if consumer:
                 consumer.close()
-            logger.info(" Weather stream processor stopped")
+            logger.info("Weather stream processor stopped")
     
     def _process_ml_anomaly_stream(self):
         """Process ML anomaly data stream from Kafka to Redis"""
         logger.info("🤖 Starting ML anomaly stream processor...")
         consumer = None
         try:
-            # DEBUG: Stampa il contenuto di KAFKA_TOPICS
-            logger.info(f"KAFKA_TOPICS at ML anomaly consumer: {KAFKA_TOPICS}")
-            logger.info(f"ml_anomalies topic: {KAFKA_TOPICS.get('ml_anomalies')}")
             # Create consumer for ML anomalies
             consumer = KafkaConsumer(
                 KAFKA_TOPICS["ml_anomalies"],
@@ -362,7 +351,7 @@ class RedisStreamProcessor:
         finally:
             if consumer:
                 consumer.close()
-            logger.info(" ML anomaly stream processor stopped")
+            logger.info("ML anomaly stream processor stopped")
 
     def _process_alerts_stream(self):
         """Process alerts data stream from Kafka to Redis"""
@@ -423,34 +412,23 @@ class RedisStreamProcessor:
         finally:
             if consumer:
                 consumer.close()
-            logger.info("🚨 Alerts stream processor stopped")
+            logger.info("Alerts stream processor stopped")
 
-    def _monitor_statistics(self):
-        """Monitor and cache system statistics"""
-        logger.info(" Starting statistics monitor...")
-        
-        while not self.shutdown_event.is_set():
-            try:
-                # System stats temporarily disabled due to datetime serialization complexity
-                # The core Redis caching functionality works perfectly without these stats
-                logger.debug("📊 Statistics monitoring cycle completed (system stats disabled)")
-                
-                # Wait before next update
-                self.shutdown_event.wait(self.service_config.health_check_interval)
-                
-            except Exception as e:
-                logger.error(f"❌ Error in statistics monitoring: {e}")
-                self.shutdown_event.wait(10)  # Wait a bit before retry
-        
-        logger.info(" Statistics monitor stopped")
+   
+    # ==================== DATA VALIDATION FUNCTIONS ====================
+    # 
+    # Ottimizzazioni implementate:
+    # 1. Allineamento range con Silver Layer per coerenza
+    # 2. Aggiunta validazione timestamp per robustezza
+    # 3. Aggiunta validazione coordinate per completezza
+    # 4. Riduzione logging da debug a warning per performance
+    # 5. Aggiunta tutti i campi inviati dal Silver Layer
+    #
+    # Motivi per mantenere questa validazione:
+    # - Difesa a strati: protegge da dati corrotti in transito
+    # - Robustezza: previene errori runtime e cache corrotta
+    # - Evoluzione: protegge da cambiamenti futuri nella pipeline
     
-    # TODO: Validazione ridondante?
-    # Manteniamo questa validazione anche se il Silver Layer già valida i dati.
-    # Motivi:
-    # 1. Difesa a strati: protegge da dati corrotti in transito, bug, replay, cambi schema imprevisti.
-    # 2. Robustezza: se in futuro cambiano i producer o la pipeline, questa validazione previene errori runtime e cache corrotta.
-    # 3. Evoluzione: se aggiungiamo nuove fonti o cambiamo il Silver Layer, questa validazione ci protegge da regressioni.
-    # Se il sistema rimane stabile e controllato, si può valutare di rimuoverla per performance.
     def _validate_sensor_data(self, data: Dict[str, Any]) -> bool:
         """Validate sensor data structure"""
         try:
@@ -460,31 +438,48 @@ class RedisStreamProcessor:
             # Check required fields
             for field in SENSOR_REQUIRED_FIELDS:
                 if field not in data:
-                    logger.debug(f"⚠️ Missing required sensor field: {field}")
+                    logger.warning(f"Missing required sensor field: {field}")
                     return False
             
             # Basic data type validation
             field_id = data.get("field_id")
+            location = data.get("location")
+            latitude = data.get("latitude")
+            longitude = data.get("longitude")
             temperature = data.get("temperature")
             humidity = data.get("humidity")
             soil_ph = data.get("soil_ph")
             
+            # Validate field_id and location
             if not field_id or not isinstance(field_id, str):
                 return False
             
-            if not isinstance(temperature, (int, float)) or not (-50 <= temperature <= 60):
+            if not location or not isinstance(location, str):
                 return False
             
+            # Validate coordinates (allineato con Silver Layer)
+            if not isinstance(latitude, (int, float)) or not (-90 <= latitude <= 90):
+                return False
+            
+            if not isinstance(longitude, (int, float)) or not (-180 <= longitude <= 180):
+                return False
+            
+            # Validate temperature (allineato con Silver Layer: -20°C to 60°C)
+            if not isinstance(temperature, (int, float)) or not (-20 <= temperature <= 60):
+                return False
+            
+            # Validate humidity (allineato con Silver Layer: 0% to 100%)
             if not isinstance(humidity, (int, float)) or not (0 <= humidity <= 100):
                 return False
             
-            if not isinstance(soil_ph, (int, float)) or not (3 <= soil_ph <= 10):
+            # Validate soil_ph (allineato con Silver Layer: 3.0 to 9.0)
+            if not isinstance(soil_ph, (int, float)) or not (3.0 <= soil_ph <= 9.0):
                 return False
             
             return True
             
         except Exception as e:
-            logger.debug(f"⚠️ Sensor data validation error: {e}")
+            logger.warning(f"Sensor data validation error: {e}")
             return False
     
     def _validate_weather_data(self, data: Dict[str, Any]) -> bool:
@@ -496,30 +491,53 @@ class RedisStreamProcessor:
             # Check required fields
             for field in WEATHER_REQUIRED_FIELDS:
                 if field not in data:
-                    logger.debug(f"⚠️ Missing required weather field: {field}")
+                    logger.warning(f"Missing required weather field: {field}")
                     return False
             
             # Basic data type validation
             location = data.get("location")
             temp_c = data.get("temp_c")
             humidity = data.get("humidity")
+            wind_kph = data.get("wind_kph")
+            uv = data.get("uv")
+            condition = data.get("condition")
+            precip_mm = data.get("precip_mm")
             
+            # Validate location
             if not location or not isinstance(location, str):
                 return False
             
+            # Validate temp_c (allineato con Silver Layer: -50°C to 60°C)
             if not isinstance(temp_c, (int, float)) or not (-50 <= temp_c <= 60):
                 return False
             
+            # Validate humidity (allineato con Silver Layer: 0% to 100%)
             if not isinstance(humidity, (int, float)) or not (0 <= humidity <= 100):
+                return False
+            
+            # Validate wind_kph (allineato con Silver Layer: 0 to 500)
+            if not isinstance(wind_kph, (int, float)) or not (0 <= wind_kph <= 500):
+                return False
+            
+            # Validate uv (allineato con Silver Layer: 0 to 20)
+            if not isinstance(uv, (int, float)) or not (0 <= uv <= 20):
+                return False
+            
+            # Validate condition
+            if not condition or not isinstance(condition, str):
+                return False
+            
+            # Validate precip_mm (allineato con Silver Layer: 0 to 1000)
+            if not isinstance(precip_mm, (int, float)) or not (0 <= precip_mm <= 1000):
                 return False
             
             return True
             
         except Exception as e:
-            logger.debug(f"⚠️ Weather data validation error: {e}")
+            logger.warning(f"Weather data validation error: {e}")
             return False
             
-    #TODO: check if this function "validate_alert_data" is needed.
+
     def _validate_alert_data(self, data: Dict[str, Any]) -> bool:
         """Validate alert data structure"""
         try:
@@ -529,7 +547,7 @@ class RedisStreamProcessor:
             # Check required fields
             for field in ALERT_REQUIRED_FIELDS:
                 if field not in data:
-                    logger.debug(f"⚠️ Missing required alert field: {field}")
+                    logger.warning(f"Missing required alert field: {field}")
                     return False
             
             # Basic data type validation
@@ -553,7 +571,7 @@ class RedisStreamProcessor:
             return True
             
         except Exception as e:
-            logger.debug(f"⚠️ Alert data validation error: {e}")
+            logger.warning(f"Alert data validation error: {e}")
             return False
 
     def _validate_ml_anomaly_data(self, data: Dict[str, Any]) -> bool:
@@ -563,7 +581,7 @@ class RedisStreamProcessor:
                 return False
             for field in ML_ANOMALY_REQUIRED_FIELDS:
                 if field not in data:
-                    logger.debug(f"⚠️ Missing required ML anomaly field: {field}")
+                    logger.warning(f"Missing required ML anomaly field: {field}")
                     return False
             # Validazione base dei tipi principali
             if not isinstance(data["field_id"], str):
@@ -586,7 +604,7 @@ class RedisStreamProcessor:
                 return False
             return True
         except Exception as e:
-            logger.debug(f"⚠️ ML anomaly data validation error: {e}")
+            logger.warning(f"ML anomaly data validation error: {e}")
             return False
     
     def _cache_sensor_batch(self, sensor_batch: List[Dict[str, Any]]) -> int:
@@ -596,7 +614,7 @@ class RedisStreamProcessor:
             logger.debug(f" Cached {cached_count}/{len(sensor_batch)} sensor records")
             return cached_count
         except Exception as e:
-            logger.error(f"❌ Error caching sensor batch: {e}")
+            logger.error(f"Error caching sensor batch: {e}")
             return 0
     
     def _cache_weather_batch(self, weather_batch: List[Dict[str, Any]]) -> int:
@@ -606,53 +624,10 @@ class RedisStreamProcessor:
             logger.debug(f" Cached {cached_count}/{len(weather_batch)} weather records")
             return cached_count
         except Exception as e:
-            logger.error(f"❌ Error caching weather batch: {e}")
+            logger.error(f"Error caching weather batch: {e}")
             return 0
     
-    def get_status(self) -> Dict[str, Any]:
-        """Get current processor status"""
-        active_threads = sum(1 for t in self.processing_threads if t.is_alive())
-        
-        start_time = datetime.fromisoformat(self.stats["start_time"])
-        uptime = (datetime.now() - start_time).total_seconds()
-        
-        return {
-            "status": "running" if not self.shutdown_event.is_set() else "shutting_down",
-            "active_threads": active_threads,
-            "total_threads": len(self.processing_threads),
-            "uptime_seconds": uptime,
-            "redis_connected": self.redis_client.connected,
-            "kafka_consumers": len(self.consumers),
-            "processing_stats": self.stats.copy()
-        }
-    
-    def get_detailed_stats(self) -> Dict[str, Any]:
-        """Get detailed processing statistics"""
-        start_time = datetime.fromisoformat(self.stats["start_time"])
-        uptime = (datetime.now() - start_time).total_seconds()
-        
-        # Calculate rates
-        messages_per_second = self.stats["messages_processed"] / max(uptime, 1)
-        cache_success_rate = (
-            self.stats["messages_cached"] / max(self.stats["messages_processed"], 1) * 100
-            if self.stats["messages_processed"] > 0 else 0
-        )
-        
-        return {
-            "processing_stats": self.stats.copy(),
-            "performance_metrics": {
-                "uptime_seconds": uptime,
-                "messages_per_second": round(messages_per_second, 2),
-                "cache_success_rate_percent": round(cache_success_rate, 2)
-            },
-            "redis_stats": self.redis_client.get_cache_statistics(),
-            "redis_health": self.redis_client.health_check(),
-            "thread_status": {
-                "active": sum(1 for t in self.processing_threads if t.is_alive()),
-                "total": len(self.processing_threads)
-            }
-        }
-    
+ 
     def shutdown(self):
         """Gracefully shutdown the stream processor"""
         logger.info("🛑 Initiating stream processor shutdown...")
@@ -663,7 +638,7 @@ class RedisStreamProcessor:
         # Close all Kafka consumers
         for name, consumer in self.consumers.items():
             try:
-                logger.info(f" Closing {name} consumer...")
+                logger.info(f"Closing {name} consumer...")
                 consumer.close()
             except Exception as e:
                 logger.warning(f"Error closing {name} consumer: {e}")
@@ -672,7 +647,7 @@ class RedisStreamProcessor:
         timeout = self.service_config.shutdown_timeout
         for thread in self.processing_threads:
             try:
-                logger.info(f" Waiting for thread {thread.name} to finish...")
+                logger.info(f"Waiting for thread {thread.name} to finish...")
                 thread.join(timeout=timeout)
                 if thread.is_alive():
                     logger.warning(f"Thread {thread.name} did not finish within timeout")

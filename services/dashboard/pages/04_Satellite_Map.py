@@ -23,6 +23,37 @@ st.set_page_config(
     layout="wide"
 )
 
+# Custom CSS to ensure sidebar navigation is always visible
+st.markdown("""
+<style>
+    /* Make sidebar wider */
+    [data-testid="stSidebar"] {
+        min-width: 320px !important;
+        max-width: 380px !important;
+    }
+    
+    /* Ensure navigation is always visible */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] {
+        max-height: none !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+    
+    /* Remove any height restrictions on navigation list */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] ul {
+        max-height: none !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+    
+    /* Ensure all navigation items are visible */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] li {
+        margin-bottom: 1px !important;
+        display: block !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Redis configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -160,6 +191,31 @@ def get_field_color_from_alerts(field_id: str, alerts: Dict[str, Dict]) -> str:
     else:
         return 'yellow'   # 🟡 YELLOW: Other alerts
 
+# Calculate map center based on field coordinates
+def calculate_map_center(field_data_list: List[Dict]) -> tuple:
+    """Calculate the center of the map based on field GPS coordinates"""
+    if not field_data_list:
+        # Default to Verona if no fields
+        return 45.4384, 10.9917
+    
+    # Collect all valid coordinates
+    valid_coords = []
+    for field_data in field_data_list:
+        lat = field_data.get('latitude')
+        lon = field_data.get('longitude')
+        if lat is not None and lon is not None:
+            valid_coords.append((lat, lon))
+    
+    if not valid_coords:
+        # Default to Verona if no valid coordinates
+        return 45.4384, 10.9917
+    
+    # Calculate average coordinates
+    avg_lat = sum(coord[0] for coord in valid_coords) / len(valid_coords)
+    avg_lon = sum(coord[1] for coord in valid_coords) / len(valid_coords)
+    
+    return avg_lat, avg_lon
+
 # Create map with field markers
 def create_field_map(field_data_list: List[Dict], alerts: Dict[str, Dict], center_lat: float = 45.4384, center_lon: float = 10.9917) -> folium.Map:
     """Create a Folium map with field markers based on alerts"""
@@ -178,15 +234,13 @@ def create_field_map(field_data_list: List[Dict], alerts: Dict[str, Dict], cente
             
         field_id = field_data.get('field_id', 'Unknown')
         
-        # Get coordinates (for now using default coordinates, will be updated when we have real GPS data)
-        # These are example coordinates for different Italian cities
-        field_coordinates = {
-            'field_01': [45.4384, 10.9917],  # Verona
-            'field_02': [45.4642, 9.1900],   # Milan
-            'field_03': [41.9028, 12.4964],  # Rome
-        }
+        # Get real GPS coordinates from sensor data
+        lat = field_data.get('latitude')
+        lon = field_data.get('longitude')
         
-        lat, lon = field_coordinates.get(field_id, [center_lat, center_lon])
+        # Skip field if GPS coordinates are not available
+        if lat is None or lon is None:
+            continue
         
         # Get field status and color based on alerts
         temperature = field_data.get('temperature', 0)
@@ -220,6 +274,7 @@ def create_field_map(field_data_list: List[Dict], alerts: Dict[str, Dict], cente
                 <p style="margin: 5px 0;"><strong>🌡️ Temperature:</strong> {temperature}°C</p>
                 <p style="margin: 5px 0;"><strong>💧 Humidity:</strong> {humidity}%</p>
                 <p style="margin: 5px 0;"><strong>🧪 Soil pH:</strong> {soil_ph}</p>
+                <p style="margin: 5px 0;"><strong>📍 GPS:</strong> {lat:.6f}, {lon:.6f}</p>
                 <p style="margin: 5px 0;"><strong>⏰ Last Update:</strong> {field_data.get('timestamp', 'N/A')}</p>
             </div>
             
@@ -239,6 +294,7 @@ def create_field_map(field_data_list: List[Dict], alerts: Dict[str, Dict], cente
 
 # Streamlit UI
 st.title("Satellite Map - Field Monitoring")
+st.markdown("*Hover over field markers to view detailed information about each selected field*")
 st.markdown("---")
 
 # Get Redis client
@@ -248,49 +304,32 @@ redis_client = get_redis_client()
 with st.sidebar:
     st.header("Map Settings")
     
-    # Field selection
-    st.subheader("Field Selection")
-    available_fields = get_available_field_ids(redis_client)
-    
-    if available_fields:
-        show_all_fields = st.checkbox("Show all fields", value=True)
+    # Field filters with expander and checkboxes
+    with st.expander("🌾 Field Selection", expanded=True):
+        # Checkbox for "All fields"
+        show_all_fields = st.checkbox("All fields", value=True, key="all_fields_map")
         
-        if not show_all_fields:
-            selected_fields = st.multiselect(
-                "Select specific fields",
-                available_fields,
-                default=available_fields[:2] if len(available_fields) >= 2 else available_fields
-            )
+        # Individual field checkboxes
+        field_01 = st.checkbox("Field 01", value=True, key="field_01_map")
+        field_02 = st.checkbox("Field 02", value=True, key="field_02_map")
+        field_03 = st.checkbox("Field 03", value=True, key="field_03_map")
+        
+        # Create selected_fields list based on checkboxes
+        if show_all_fields:
+            selected_fields = ["field_01", "field_02", "field_03"]
         else:
-            selected_fields = available_fields
-    else:
-        st.warning("No fields available in Redis")
-        selected_fields = []
+            selected_fields = []
+            if field_01:
+                selected_fields.append("field_01")
+            if field_02:
+                selected_fields.append("field_02")
+            if field_03:
+                selected_fields.append("field_03")
     
-    # Map center selection
-    st.subheader("Map Center")
-    center_options = {
-        "Verona (Default)": [45.4384, 10.9917],
-        "Milan": [45.4642, 9.1900],
-        "Rome": [41.9028, 12.4964],
-        "Naples": [40.8518, 14.2681],
-        "Palermo": [38.1157, 13.3615]
-    }
+    # Map center will be calculated automatically based on selected fields
     
-    selected_center = st.selectbox(
-        "Select map center",
-        list(center_options.keys()),
-        index=0
-    )
-    
-    center_lat, center_lon = center_options[selected_center]
-    
-    # Auto-refresh settings
-    st.subheader("Auto-refresh")
-    auto_refresh = st.checkbox("Enable auto-refresh", value=True)
-    if auto_refresh:
-        refresh_interval = st.selectbox("Refresh interval", [5, 10, 30, 60], index=1)
-        st.caption(f"Map will refresh every {refresh_interval} seconds")
+    # Fixed auto-refresh interval
+    refresh_interval = 10  # Fixed refresh interval of 10 seconds
 
 # Main content
 if not redis_client:
@@ -315,6 +354,9 @@ if field_data_list:
     
     # Get all latest alerts
     all_alerts = get_all_latest_alerts(redis_client)
+    
+    # Calculate map center automatically based on field coordinates
+    center_lat, center_lon = calculate_map_center(field_data_list)
     
     # Create two columns for map and satellite image (map larger, image smaller)
     col1, col2 = st.columns([3, 2])  # 60% map, 40% image
@@ -360,43 +402,6 @@ if field_data_list:
             </div>
             """, unsafe_allow_html=True)
     
-    # Show field statistics
-    st.subheader("Field Statistics")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Fields", len(field_data_list))
-    
-    with col2:
-        avg_temp = sum(f.get('temperature', 0) for f in field_data_list) / len(field_data_list)
-        st.metric("Avg Temperature", f"{avg_temp:.1f}°C")
-    
-    with col3:
-        avg_humidity = sum(f.get('humidity', 0) for f in field_data_list) / len(field_data_list)
-        st.metric("Avg Humidity", f"{avg_humidity:.1f}%")
-    
-    with col4:
-        avg_ph = sum(f.get('soil_ph', 7.0) for f in field_data_list) / len(field_data_list)
-        st.metric("Avg Soil pH", f"{avg_ph:.1f}")
-    
-    # Show detailed field data table
-    st.subheader("Field Details")
-    
-    if field_data_list:
-        # Prepare data for table
-        table_data = []
-        for field in field_data_list:
-            table_data.append({
-                'Field ID': field.get('field_id', 'N/A'),
-                'Temperature (°C)': field.get('temperature', 'N/A'),
-                'Humidity (%)': field.get('humidity', 'N/A'),
-                'Soil pH': field.get('soil_ph', 'N/A'),
-                'Last Update': field.get('timestamp', 'N/A')
-            })
-        
-        st.dataframe(table_data, use_container_width=True)
-    
 else:
     st.warning("No field data available for the selected fields.")
     st.info("Check that the sensor service is running and sending data to Redis.")
@@ -407,7 +412,6 @@ st.caption(f"Map generated on {datetime.now().strftime('%d/%m/%Y at %H:%M:%S')}"
 st.caption("🗺️ **Map Source**: OpenStreetMap | 📡 **Data Source**: IoT sensors via Redis cache | 🛰️ **Satellite**: Copernicus Sentinel-2 via MinIO ([Sentinel Hub](https://sh.dataspace.copernicus.eu/))")
 
 # Auto-refresh functionality
-if auto_refresh:
-    import time
-    time.sleep(refresh_interval)
-    st.experimental_rerun() 
+import time
+time.sleep(refresh_interval)
+st.experimental_rerun() 

@@ -5,6 +5,38 @@ import json
 from typing import List, Dict
 from datetime import datetime
 import pytz
+from streamlit_autorefresh import st_autorefresh
+
+# Custom CSS to ensure sidebar navigation is always visible
+st.markdown("""
+<style>
+    /* Make sidebar wider */
+    [data-testid="stSidebar"] {
+        min-width: 320px !important;
+        max-width: 380px !important;
+    }
+    
+    /* Ensure navigation is always visible */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] {
+        max-height: none !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+    
+    /* Remove any height restrictions on navigation list */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] ul {
+        max-height: none !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+    
+    /* Ensure all navigation items are visible */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] li {
+        margin-bottom: 1px !important;
+        display: block !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Redis configuration (adapt if you use different variables)
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
@@ -35,12 +67,8 @@ st.title("ML Insights - Real-time Anomalies")
 
 redis_client = get_redis_client()
 
-# Automatic refresh every 10s
-st_autorefresh = st.experimental_rerun if st.experimental_get_query_params().get("refresh") else None
-st.experimental_set_query_params(refresh="1")
-st_autorefresh = st_autorefresh or (lambda: None)
-st_autorefresh()
-st.experimental_set_query_params()
+# Auto-refresh every 10 seconds for real-time updates
+st_autorefresh(interval=10 * 1000, key="ml_insights_autorefresh")
 
 # Sidebar for field selection
 st.sidebar.header("Filter by agricultural field")

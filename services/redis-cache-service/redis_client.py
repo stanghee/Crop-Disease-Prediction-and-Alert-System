@@ -7,11 +7,10 @@ Handles all Redis interactions with connection pooling, error handling, and data
 import redis
 import ujson
 import time
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Union
+from datetime import datetime
+from typing import Dict, List, Any, Optional
 from loguru import logger
 from contextlib import contextmanager
-from dataclasses import asdict
 
 from config import get_redis_config, get_cache_config, get_service_config
 
@@ -41,10 +40,7 @@ class RedisClient:
         self.redis = redis.Redis(connection_pool=self.pool)
         self.connected = False
         
-        # Pipeline for batch operations
-        self.pipeline_batch_size = 100
-        
-        logger.info(f"🔧 Redis client initialized for {self.redis_config.host}:{self.redis_config.port}")
+        logger.info(f" Redis client initialized for {self.redis_config.host}:{self.redis_config.port}")
     
     def connect(self) -> bool:
         """Establish connection to Redis with retry logic"""
@@ -117,7 +113,7 @@ class RedisClient:
             )
             
             if result:
-                logger.debug(f"📡 Cached sensor data for field {field_id}")
+                logger.debug(f"Cached sensor data for field {field_id}")
                 return True
             return False
             
@@ -133,10 +129,10 @@ class RedisClient:
             
             if cached_data:
                 data = ujson.loads(cached_data)
-                logger.debug(f"📖 Retrieved sensor data for field {field_id}")
+                logger.debug(f"Retrieved sensor data for field {field_id}")
                 return data
             
-            logger.debug(f"❌ No cached sensor data for field {field_id}")
+            logger.debug(f"No cached sensor data for field {field_id}")
             return None
             
         except Exception as e:
@@ -165,7 +161,7 @@ class RedisClient:
                     field_id = key.decode('utf-8').split(':')[-1]
                     sensor_data[field_id] = ujson.loads(data)
             
-            logger.debug(f"📖 Retrieved sensor data for {len(sensor_data)} fields")
+            logger.debug(f"Retrieved sensor data for {len(sensor_data)} fields")
             return sensor_data
             
         except Exception as e:
@@ -195,7 +191,7 @@ class RedisClient:
             )
             
             if result:
-                logger.debug(f"🌦️ Cached weather data for location {location}")
+                logger.debug(f"Cached weather data for location {location}")
                 return True
             return False
             
@@ -211,10 +207,10 @@ class RedisClient:
             
             if cached_data:
                 data = ujson.loads(cached_data)
-                logger.debug(f"📖 Retrieved weather data for location {location}")
+                logger.debug(f"Retrieved weather data for location {location}")
                 return data
             
-            logger.debug(f"❌ No cached weather data for location {location}")
+            logger.debug(f"No cached weather data for location {location}")
             return None
             
         except Exception as e:
@@ -243,59 +239,14 @@ class RedisClient:
                     location = key.decode('utf-8').split(':')[-1]
                     weather_data[location] = ujson.loads(data)
             
-            logger.debug(f"📖 Retrieved weather data for {len(weather_data)} locations")
+            logger.debug(f"Retrieved weather data for {len(weather_data)} locations")
             return weather_data
             
         except Exception as e:
             logger.error(f"❌ Error retrieving all weather data: {e}")
             return {}
     
-    # ==================== ALERTS OPERATIONS ==================== #TODO: check if this is correct
-    
-    def cache_active_alerts(self, alerts: List[Dict[str, Any]]) -> bool:
-        """Cache list of active alerts"""
-        try:
-            # Add metadata
-            cache_data = {
-                "alerts": alerts,
-                "cached_at": datetime.now().isoformat(),
-                "count": len(alerts),
-                "cache_ttl": self.cache_config.alert_data_ttl
-            }
-            
-            serialized_data = ujson.dumps(cache_data)
-            result = self.redis.setex(
-                self.cache_config.alerts_active_key,
-                self.cache_config.alert_data_ttl,
-                serialized_data
-            )
-            
-            if result:
-                logger.debug(f"🚨 Cached {len(alerts)} active alerts")
-                return True
-            return False
-            
-        except Exception as e:
-            logger.error(f"❌ Error caching active alerts: {e}")
-            return False
-    
-    def get_active_alerts(self) -> List[Dict[str, Any]]:
-        """Get cached active alerts"""
-        try:
-            cached_data = self.redis.get(self.cache_config.alerts_active_key)
-            
-            if cached_data:
-                data = ujson.loads(cached_data)
-                alerts = data.get("alerts", [])
-                logger.debug(f"📖 Retrieved {len(alerts)} active alerts")
-                return alerts
-            
-            logger.debug("❌ No cached active alerts")
-            return []
-            
-        except Exception as e:
-            logger.error(f"❌ Error retrieving active alerts: {e}")
-            return []
+    # ==================== ALERTS OPERATIONS ==================== 
     
     def cache_latest_alert(self, zone_id: str, alert_data: Dict[str, Any]) -> bool:
         """
@@ -324,7 +275,7 @@ class RedisClient:
             )
             
             if result:
-                logger.debug(f"🚨 Cached latest alert for zone {zone_id}")
+                logger.debug(f"Cached latest alert for zone {zone_id}")
                 return True
             return False
             
@@ -340,10 +291,10 @@ class RedisClient:
             
             if cached_data:
                 data = ujson.loads(cached_data)
-                logger.debug(f"🚨 Retrieved latest alert for zone {zone_id}")
+                logger.debug(f"Retrieved latest alert for zone {zone_id}")
                 return data
             
-            logger.debug(f"❌ No cached latest alert for zone {zone_id}")
+            logger.debug(f"No cached latest alert for zone {zone_id}")
             return None
             
         except Exception as e:
@@ -372,7 +323,7 @@ class RedisClient:
                     zone_id = key.decode('utf-8').split(':')[-1]
                     alerts_data[zone_id] = ujson.loads(data)
             
-            logger.debug(f"📖 Retrieved latest alerts for {len(alerts_data)} zones")
+            logger.debug(f"Retrieved latest alerts for {len(alerts_data)} zones")
             return alerts_data
             
         except Exception as e:
@@ -405,7 +356,7 @@ class RedisClient:
                 serialized_data
             )
             if result:
-                logger.debug(f"🤖 Cached ML anomaly for field {field_id}")
+                logger.debug(f"Cached ML anomaly for field {field_id}")
                 return True
             return False
         except Exception as e:
@@ -419,16 +370,15 @@ class RedisClient:
             cached_data = self.redis.get(key)
             if cached_data:
                 data = ujson.loads(cached_data)
-                logger.debug(f"🤖 Retrieved ML anomaly for field {field_id}")
+                logger.debug(f"Retrieved ML anomaly for field {field_id}")
                 return data
-            logger.debug(f"❌ No cached ML anomaly for field {field_id}")
+            logger.debug(f"No cached ML anomaly for field {field_id}")
             return None
         except Exception as e:
             logger.error(f"❌ Error retrieving ML anomaly for {field_id}: {e}")
             return None
     
-    # ==================== UTILITY OPERATIONS ==================== #TODO: check if we are interest to mantein this 
-    # it is used for batch caching of sensor and weather data and it gives statistics about the cache
+    # ==================== BATCH OPERATIONS ====================
     
     def batch_cache_sensor_data(self, sensor_batch: List[Dict[str, Any]]) -> int:
         """
@@ -464,7 +414,7 @@ class RedisClient:
                 results = pipe.execute()
                 cached_count = sum(1 for result in results if result)
                 
-            logger.debug(f"📡 Batch cached {cached_count}/{len(sensor_batch)} sensor records")
+            logger.debug(f"Batch cached {cached_count}/{len(sensor_batch)} sensor records")
             return cached_count
             
         except Exception as e:
@@ -497,12 +447,14 @@ class RedisClient:
                 results = pipe.execute()
                 cached_count = sum(1 for result in results if result)
                 
-            logger.debug(f"🌦️ Batch cached {cached_count}/{len(weather_batch)} weather records")
+            logger.debug(f"Batch cached {cached_count}/{len(weather_batch)} weather records")
             return cached_count
             
         except Exception as e:
             logger.error(f"❌ Error batch caching weather data: {e}")
             return 0
+    
+    # ==================== MONITORING OPERATIONS ====================
     
     def health_check(self) -> Dict[str, Any]:
         """Perform Redis health check"""
@@ -544,7 +496,6 @@ class RedisClient:
                 "sensor_keys": len(self.redis.keys("sensors:latest:*")),
                 "weather_keys": len(self.redis.keys("weather:latest:*")),
                 "alert_latest_keys": len(self.redis.keys("alerts:latest:*")),
-                "alert_active_keys": len(self.redis.keys("alerts:active")),
                 "prediction_keys": len(self.redis.keys("predictions:latest:*")),
                 "total_keys": self.redis.dbsize()
             }
@@ -564,16 +515,4 @@ class RedisClient:
             
         except Exception as e:
             logger.error(f"❌ Error getting cache statistics: {e}")
-            return {}
-    
-    def clear_expired_keys(self) -> int:
-        """Clear expired keys manually (Redis handles this automatically, but this is for monitoring)"""
-        try:
-            # This is mainly for monitoring - Redis handles TTL automatically
-            # We can get expired key count from Redis info
-            info = self.redis.info()
-            expired_keys = info.get("expired_keys", 0)
-            return expired_keys
-        except Exception as e:
-            logger.error(f"❌ Error getting expired keys count: {e}")
-            return 0 
+            return {} 
