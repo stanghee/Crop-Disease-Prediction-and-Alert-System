@@ -27,5 +27,5 @@ KMEANS_CONFIG = {
 
 # Soglie per anomaly score basate su distanza euclidea dal centroide
 # Le distanze tipiche con 5 features scalate sono nell'ordine di 1-3 per punti normali
-ANOMALY_DISTANCE_THRESHOLD = 2.5   # Distanza > 2.5 = anomalia
+ANOMALY_DISTANCE_THRESHOLD = 1   # Distanza > 1 = anomalia, for the DEMO
 CRITICAL_DISTANCE_THRESHOLD = 4.0  # Distanza > 4.0 = criticità
