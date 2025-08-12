@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Spark Streaming Alert Service - Simplified Version
 Reads data from Kafka topics, applies alert thresholds, saves to the database
@@ -216,6 +215,8 @@ class SparkStreamingAlertService:
             # Temperature alerts
             ((col("temp_c") < 0) & col("temp_valid")) |
             ((col("temp_c") > 45) & col("temp_valid")) |
+            ((col("humidity") < 30) & col("humidity_valid")) |
+            ((col("humidity") > 85) & col("humidity_valid")) |
             # Wind alerts
             ((col("wind_kph") > 80) & col("wind_valid")) |
             # UV alerts
@@ -226,14 +227,19 @@ class SparkStreamingAlertService:
             "alert_type", lit("WEATHER_ALERT")
         ).withColumn(
             "severity",
-            when((col("temp_c") < -10) | (col("temp_c") > 50) | (col("wind_kph") > 100) | (col("uv") >= 11) | (col("precip_mm") >= 100), "HIGH")
-            .otherwise("MEDIUM") #TODO: Check how we are setting the severity
+            when((col("temp_c") < -10) | (col("temp_c") > 50) | 
+                 (col("wind_kph") > 100) | (col("uv") >= 11) | 
+                 (col("precip_mm") >= 100) |
+                 (col("humidity") < 20) | (col("humidity") > 95), "HIGH")
+            .otherwise("MEDIUM")
         ).withColumn(
             "message",
             concat(
                 lit("Weather Alert: "),
                 when(col("temp_c") < 0, concat(lit("Low temperature "), col("temp_c"), lit("°C")))
                 .when(col("temp_c") > 45, concat(lit("High temperature "), col("temp_c"), lit("°C")))
+                .when(col("humidity") < 30, concat(lit("Low humidity "), col("humidity"), lit("%")))
+                .when(col("humidity") > 85, concat(lit("High humidity "), col("humidity"), lit("%")))
                 .when(col("wind_kph") > 80, concat(lit("High wind speed "), col("wind_kph"), lit(" km/h")))
                 .when(col("uv") >= 8, concat(lit("High UV index "), col("uv")))
                 .when(col("precip_mm") >= 50, concat(lit("Heavy rainfall "), col("precip_mm"), lit(" mm")))
