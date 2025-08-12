@@ -218,8 +218,9 @@ class MLAnomalyService:
                         "remaining_seconds": int(remaining_seconds),
                         "remaining_minutes": int(remaining_seconds // 60)
                     },
-                    "daily_training": {
+                    "weekly_training": {
                         "scheduled": True,
+                        "day": "Sunday",
                         "time": "02:00 AM"
                     },
                     "timestamp": datetime.now().isoformat()
@@ -306,8 +307,8 @@ class MLAnomalyService:
     #TODO: It is necessary, it could be good to mantain but then we need to explain why
     def start_scheduled_training(self):
         """Start scheduled training job"""
-        # Schedule daily training at 2 AM
-        schedule.every().day.at("02:00").do(lambda: self._train_and_reload(30))
+        # Schedule weekly training on Sunday at 2 AM
+        schedule.every().sunday.at("02:00").do(lambda: self._train_and_reload(30))
         
         def run_schedule():
             while self.is_running:
@@ -316,7 +317,7 @@ class MLAnomalyService:
         
         schedule_thread = threading.Thread(target=run_schedule, daemon=True)
         schedule_thread.start()
-        logger.info("Scheduled training started (daily at 2 AM)")
+        logger.info("Scheduled training started (weekly on Sunday at 2 AM)")
     
     # The train start after 4 minutes to allow data collection
     def initial_setup(self):
