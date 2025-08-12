@@ -409,7 +409,7 @@ else:
 # Footer
 st.markdown("---")
 st.caption(f"Map generated on {datetime.now().strftime('%d/%m/%Y at %H:%M:%S')}")
-st.caption("🗺️ **Map Source**: OpenStreetMap | 📡 **Data Source**: IoT sensors via Redis cache | 🛰️ **Satellite**: Copernicus Sentinel-2 via MinIO ([Sentinel Hub](https://sh.dataspace.copernicus.eu/))")
+st.caption("🗺️ **Map Source**: OpenStreetMap | 📡 **Data Source**: IoT sensors via Redis cache | 🛰️ **Satellite**: Copernicus Sentinel-2 via MinIO ([Sentinel Hub](https://dataspace.copernicus.eu/analyse/apis/sentinel-hub))")
 
 # Auto-refresh functionality
 import time

@@ -46,7 +46,7 @@ The **Crop Disease Prediction and Alert System** is a comprehensive real-time ag
 **Machine Learning Prediction**
 - Utilizes K-means unsupervised clustering for anomaly recognition 
 - Classifies risk levels and provides anomaly scores
-- Automatic model re-training with new data to improve accuracy
+- Automatic model re-training with new data, which change with seasonality, to improve prediction accuracy continuously.
 
 **Real-Time Processing**
 - Processes data through Apache Spark with medallion data lake architecture (Bronze/Silver/Gold)
@@ -68,7 +68,7 @@ The system implements a microservices architecture optimized for real-time agric
 
 ### Architectural Overview
 
-The system follows a distributed microservices pattern with event-driven communication, organized into five primary layers:
+The system follows a distributed microservices pattern, organized into five primary layers:
 
 1. **Data Acquisition Layer**: Collects IoT sensor data, weather information, and satellite imagery
 2. **Stream Processing Layer**: Processes data using Apache Spark
@@ -104,7 +104,7 @@ Our system architecture leverages a modern, scalable tech stack to meet the dema
 | **Stream Processing**| Apache Spark   | The core processing engine for our data lake. Its Structured Streaming capabilities are used for real-time data validation, transformation, and feature engineering.         |
 | **ML Framework**    | PySpark ML     | Used for implementing our K-means clustering model. PySpark ML provides distributed machine learning capabilities that integrate seamlessly with our Spark-based data processing pipeline.                |
 | **Containerization**| Docker         | All microservices are containerized with Docker, ensuring consistent, isolated, and reproducible deployments across different environments.                               |
-| **Databases**       | PostgreSQL     | Serves as the primary relational database for storing structured data like alerts and ML predictions.                             |
+| **Database**       | PostgreSQL     | Serves as the primary relational database for storing structured data like alerts and ML predictions.                             |
 | **In-Memory Cache** | Redis          | Provides a high-speed, in-memory caching layer. The `redis-cache-service` uses it to store the latest data points for quick retrieval by the dashboard.                    |
 | **Object Storage**  | MinIO          | An S3-compatible object storage solution used to implement our medallion data lake architecture (Bronze, Silver, Gold zones) for storing large volumes of unstructured data. |
 | **Dashboard**       | Streamlit      | A Python framework for building interactive web applications. It allows us to rapidly develop and deploy a user-friendly dashboard for data visualization and monitoring.   |
@@ -120,13 +120,12 @@ Crop-Disease-Prediction-and-Alert-System/
 │   ├── weather-service/             # Retrieves weather data from APIs
 │   ├── satellite-service/           # Retrieves satellite data from APIs
 │   ├── storage-service/             # 3-zone data lake processing
-│   ├── crop-disease-service/        # Real-time alert generation
+│   ├── crop-disease-service/        # Real-time alert generation and postgres db inizialization 
 │   ├── ml-anomaly-service/          # ML-based anomaly detection
 │   ├── redis-cache-service/         # Real-time data caching
 │   ├── dashboard/                   # Streamlit visualization interface
 │   └── Images/                      # Images used for readme
-├── docker-compose.yml               # Container orchestration
-└── test_anomaly_data_fixed.json     # Test data
+└── docker-compose.yml               # Container orchestration
 ```
 
 ### Data Producers
@@ -187,7 +186,7 @@ The system ingests data from three primary sources:
 Data flows through a series of specialized Spark jobs that perform increasingly sophisticated analysis:
 
 1. **Data Standardization**: Raw inputs undergo validation, normalization, and format standardization
-2. **Anomaly Detection**: Statistical methods identify unusual readings that may indicate disease risk
+2. **Anomaly Detection**: Treshold method identify unusual readings that may indicate disease risk
 3. **Location-based Processing**: Field-specific data aggregation and validation
 4. **Temporal Aggregation**: Time-window processing (10-minute sliding windows) for feature engineering
 5. **Predictive Modeling**: ML models simulate disease risk based on environmental conditions
@@ -208,7 +207,7 @@ The system implements a comprehensive data management strategy using the medalli
 * **Satellite Data**: Processed satellite metadata with validation (images remain in `satellite-images` bucket)
 
 ### Gold Layer (ML-Ready Data)
-* **ML Features**: Aggregated features optimized for machine learning with sliding window processing
+* **ML Features**: Aggregated features optimized for machine learning with 10 minutes sliding window processing
 
 ### Model Storage
 * **ML Models**: K-means clustering models stored in MinIO with versioning and metadata
@@ -234,7 +233,7 @@ The system's predictive capabilities are powered by an unsupervised machine lear
 ### Unsupervised Anomaly Detection
 
 * **Model**: K-means Clustering (PySpark ML)
-  * **Input Features**: A vector of scaled environmental parameters, including `sensor_avg_temperature`, `sensor_avg_humidity`, `sensor_avg_soil_ph`, `temp_differential`, `humidity_differential`, `sensor_anomaly_rate`, `weather_avg_uv_index`, `weather_avg_wind_speed`, and cyclical temporal features.
+  * **Input Features**: A vector of scaled environmental parameters, including `sensor_avg_temperature`, `sensor_avg_humidity`, `sensor_avg_soil_ph`, `temp_differential`, `humidity_differential`, `sensor_anomaly_rate`, `weather_avg_uv_index`, `weather_avg_wind_speed`, and cyclical temporal features: `temporal_feature_ml_sin`, `temporal_feature_ml_cos`.
   * **Logic**: The model groups historical data into clusters representing "normal" environmental states. New, incoming data points are assigned to the nearest cluster.
   * **Anomaly Score**: The anomaly score is calculated as the Euclidean distance of a new data point from the centroid of its assigned cluster. A larger distance indicates a greater deviation from the norm, signifying a potential anomaly.
   * **Output**: The service generates an anomaly score, a severity level (LOW, MEDIUM, HIGH, CRITICAL) based on pre-defined distance thresholds, and actionable recommendations.
@@ -249,11 +248,11 @@ The system's predictive capabilities are powered by an unsupervised machine lear
 ### Model Training and Deployment
 
 * **Initial Training**: The model is automatically trained 4 minutes after the `ml-anomaly-service` starts (demo phase), allowing enough time for initial data to accumulate in the data lake.
-* **Scheduled Retraining**: A daily retraining job is scheduled to run at 2:00 AM. This ensures the model adapts to evolving environmental patterns and seasonal changes, maintaining its accuracy over time.
+* **Scheduled Retraining**: A weekly retraining job (on Sunday) is scheduled to run at 2:00 AM. This ensures the model adapts to evolving environmental patterns and seasonal changes, maintaining its accuracy over time.
 * **Data Source for Training**: Training is performed on the aggregated feature data stored in the Gold zone of the MinIO data lake.
 * **Model Versioning**: Tracked model versions with metadata and performance metrics
 
-## Dashboard & Visualization #TODO: sistema le pagine e le gif di demo
+## Dashboard & Visualization
 
 The system provides a comprehensive visualization interface designed for agricultural monitoring and decision support. The dashboard offers specialized views for different aspects of crop disease monitoring.
 
@@ -277,6 +276,8 @@ Features include:
 * **Anomaly detection results** with anomaly scores
 * **Disease risk predictions** by field and time period
 * **Feature importance analysis** for understanding predictions
+
+![ML-insight Demo](./services/Images/ml_insights.gif)
 
 ### Threshold Alerts
 
@@ -307,10 +308,12 @@ Features include:
 The insights page provides comprehensive analytical reporting:
 
 Advanced analytical features include:
-* **Environmental trend analysis** across time periods
-* **Field comparison** by environmental conditions
-* **Risk score distribution** visualization
+* **Alert count** for Ml predictions and treshold alerts
+* **Temporal analysis** for Ml predictions and treshold alerts
+* **Descriptive statistic** for ML predictions
+* **Average risk score distribution** for ML predictions 
 
+![Data Insight Demo](./services/Images/data_insights.gif)
 
 ## Performance & Results
 
@@ -359,45 +362,46 @@ Note: rates vary with configuration and data characteristics; values above refle
 
 ### Current Limitations 
 
-#TODO: aggiungi e completa
-
 Despite its capabilities, the current implementation has several significant limitations:
 
-1. **Synthetic Data**: 
+1. **Synthetic Data**: The system currently uses simulated IoT sensor data instead of real sensor readings. In a production environment, data should come from actual sensors positioned across different agricultural fields to provide authentic environmental measurements.
 
-2. **Basic ML Models**: 
+2. **Basic ML Models**: Currently, for the demo, alerts are forced by setting low thresholds. In production, a much more robust and validated machine learning model would be required to provide accurate disease prediction and risk assessment.
 
 3. **Limited Field Coverage**: The system currently monitors only 3 simulated fields, which is insufficient for large-scale agricultural operations.
 
-4. **Satellite Integration**: 
+4. **Drone Images Integration**: Currently, the system uses satellite images from a free service. It would be beneficial to use paid services that provide high-quality, consistently recent images for better agricultural monitoring and analysis.
 
-5. **External Integration**: 
+5. **External Integration**: The system lacks integration with external notification services. There should be a service that allows farmers to receive messages or phone calls for alerts about anomalies, rather than only visualizing them in the dashboard.
+
+6. **Poor Data Quality and Quantity**: The system lacks specific information about agricultural fields, such as crop types, soil characteristics, historical yield data, and field management practices, etc. With more comprehensive and accurate agricultural knowledge and information, we could create more complex and precise recommendations tailored to specific farming conditions and requirements.
+
+7. **Hardcoded Thresholds**: Currently, the threshold alerts use hardcoded values that are the same for all users and do not account for seasonality. In a production environment, thresholds should be customizable per user and dynamically adjusted based on seasonal variations and specific crop requirements.
 
 ### Scaling Challenges
 
 In a real-world deployment, scaling to larger areas or higher data volumes requires improvements across several components:
 
-- **Spark state/shuffle & checkpoints**: Aggregations and joins in Silver/Gold can saturate memory and shuffle disks. Right‑size executors/cores, apply watermarks/backpressure, and keep state store/checkpoints on durable storage (S3/MinIO) instead of local `/tmp`.
+- **Spark state/shuffle & checkpoints**: Data processing in Silver/Gold layers can consume excessive memory and disk space. To scale properly, optimize executor configurations, implement data flow controls, and store checkpoints on persistent storage (S3/MinIO) rather than temporary local storage.
 - **Kafka throughput & reliability**: Demo runs a single broker. To scale, increase topic partitions and replication factor.
-- **PostgreSQL persistence**: Tables `alerts` and `ml_predictions` will grow quickly. Consider TimescaleDB only if advanced time‑series features are required.
-- **Object storage (MinIO/S3)**: Demo uses single‑node MinIO. For volume/HA, adopt distributed MinIO or managed S3, lifecycle policies, key‑prefix sharding to avoid hot prefixes, and multipart uploads for large objects.
-- **Redis cache**: Single instance. For throughput/HA, use Redis Cluster or Sentinel, align TTLs with volumes.
+- **PostgreSQL storage**: Tables `alerts` and `ml_predictions` will grow quickly. Consider TimescaleDB only if advanced time‑series features are required.
+- **Object storage (MinIO/S3)**: Demo uses single‑node MinIO. For production, use distributed MinIO or managed S3 with data lifecycle management and optimized storage strategies for large files.
+- **Redis cache**: Single instance. For production, use multiple Redis servers for better performance and reliability, with automatic data backup and recovery. Implement proper TTL (Time To Live) settings to manage data expiration based on data volumes.
 - **Dashboard (Streamlit)**: Not designed for high concurrency.
 - **Observability & resilience**: Centralize metrics/logs (Datadog), add data quality checks.
 
 ### Potential Improvements
 
+#TODO: ricontrolla bene
+
 Several improvements could address current limitations for a more robust implementation:
 
 * **Real Sensor Integration**: Connect to actual agricultural IoT devices and sensor networks.
 * **Advanced ML Models**: Implement deep learning models for more sophisticated disease prediction.
-* **Satellite Analytics**: Integrate vegetation health indices and disease-specific spectral analysis.
+* **Satellite Analytics**: Integrate vegetation health indices and disease-specific spectral analysis, implementing a machine/deep learning model specifically designed for image analysis to detect disease patterns in satellite imagery.
 * **Mobile Applications**: Develop mobile apps for field workers and agricultural managers.
 * **Predictive Maintenance**: Implement sensor health monitoring and predictive maintenance alerts.
-
-### Future Work
-
-#TODO: completa
+* **Kubernetes Deployment**: In production, the Spark cluster should utilize Kubernetes for better resource management, scalability, and fault tolerance. Kubernetes provides automatic scaling, load balancing, and self-healing capabilities that are essential for handling large-scale agricultural data processing workloads.
 
 ## Team & Contributors
 
@@ -405,6 +409,7 @@ This project was developed by:
 
 - [@filippostanghellini](https://github.com/stanghee)
 - [@paolofabbri](https://github.com/PaoloFabbri8)
+- [@MolteniF](https://github.com/MolteniF)
 
 ## Getting Started
 
@@ -476,4 +481,7 @@ The system's ability to integrate multiple data sources, perform real-time analy
 
 ## References
 
-#TODO: aggiunge le references dalla chat di discord 
+- [Medallion Architecture (Databricks Glossary)](https://www.databricks.com/glossary/medallion-architecture)
+- [What is the medallion lakehouse architecture? (Databricks Docs)](https://docs.databricks.com/aws/en/lakehouse/medallion)
+
+#TODO:  aggiungi le altre reference che abbiamo utilizzato, chat reference in discord 
