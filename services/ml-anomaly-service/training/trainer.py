@@ -74,8 +74,11 @@ class AnomalyTrainer:
             cost = model.summary.trainingCost
             logger.info(f"Training completed with K-Means cost: {cost}")
             
-            avg_distance = cost / scaled_df.count() if scaled_df.count() > 0 else 0.0 #TODO: Can be used for anomaly detection as a threshold (not in the demo pahse because we have to force anomaly detection)
-            max_distance = cost  # TODO: fix it to the correct max distance 
+            # Calculate average distance for anomaly detection threshold
+            # trainingCost is sum of squared distances, so we need to convert to linear distance
+            avg_squared_distance = cost / scaled_df.count() if scaled_df.count() > 0 else 0.0
+            avg_distance = math.sqrt(avg_squared_distance)  # #IMPORTANT INFO: Can be used for anomaly detection as a anomaly score threshold (not in the demo pahse because we have to force anomaly detection)
+            logger.info(f"Average squared distance: {avg_squared_distance:.4f}, Average linear distance: {avg_distance:.4f}")
 
             # Model metadata
             metadata = {
@@ -90,8 +93,7 @@ class AnomalyTrainer:
                 },
                 'model_config': {'k': k_val, 'maxIter': KMEANS_CONFIG['maxIter'], 'seed': KMEANS_CONFIG['seed']},
                 'training_metrics': {
-                    'avg_distance': float(avg_distance),
-                    'max_distance': float(max_distance)
+                    'avg_distance': float(avg_distance)
                 }
             }
             # Save model
