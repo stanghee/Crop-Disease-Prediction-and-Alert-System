@@ -3,7 +3,7 @@
 Feature configuration for ML anomaly detection
 Simple core features as requested
 """
-#TODO: check if sensor anomaly rate is usefull 
+
 # Core features for anomaly detection
 CORE_FEATURES = [
     'sensor_avg_temperature',
@@ -20,12 +20,12 @@ CORE_FEATURES = [
 
 # Model configuration for KMeans
 KMEANS_CONFIG = {
-    'k': 3,                # Numero di cluster, configurabile (ridotto per test)
-    'maxIter': 20,         # Iterazioni massime
+    'k': 3,                # Number of clusters, configurable (reduced for testing)
+    'maxIter': 20,         # Maximum iterations
     'seed': 42             # Random seed
 }
 
-# Soglie per anomaly score basate su distanza euclidea dal centroide
-# Le distanze tipiche con 5 features scalate sono nell'ordine di 1-3 per punti normali
-ANOMALY_DISTANCE_THRESHOLD = 1   # Distanza > 1 = anomalia, for the DEMO
-CRITICAL_DISTANCE_THRESHOLD = 4.0  # Distanza > 4.0 = criticità
+# Thresholds for anomaly score based on euclidean distance from centroid
+# Typical distances with 5 scaled features are in the range of 1-3 for normal points
+ANOMALY_DISTANCE_THRESHOLD = 1   # Distance > 1 = anomaly, for the DEMO
+CRITICAL_DISTANCE_THRESHOLD = 4.0  # Distance > 4.0 = critical severity

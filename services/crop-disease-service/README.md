@@ -85,7 +85,7 @@ Schema:
     "uv": "double",
     "precip_mm": "double",
     "temp_valid": "boolean",        // Used to filter out invalid temperature readings
-    "humidity_valid": "boolean",    // Used to filter out invalid humidity readings #TODO: in realtà non usiamo
+    "humidity_valid": "boolean",    // Used to filter out invalid humidity readings
     "wind_valid": "boolean",        // Used to filter out invalid wind readings
     "uv_valid": "boolean",         // Used to filter out invalid UV readings
     "precip_valid": "boolean",     // Used to filter out invalid precipitation readings

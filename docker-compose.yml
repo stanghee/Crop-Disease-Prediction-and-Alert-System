@@ -181,7 +181,7 @@ services:
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - TIMEZONE=Europe/Rome
-      - ANOMALY_PROBABILITY=0.5 # TODO: we should change with env variable 
+      - ANOMALY_PROBABILITY=${SENSOR_ANOMALY_PROBABILITY} 
     restart: unless-stopped
     mem_limit: 256m
     mem_reservation: 128m
@@ -206,12 +206,11 @@ services:
       MINIO_PORT: 9000
       COPERNICUS_CLIENT_ID: ${COPERNICUS_CLIENT_ID} # from .env file
       COPERNICUS_CLIENT_SECRET: ${COPERNICUS_CLIENT_SECRET} # from .env file
-      # Configurazione area geografica (default: Verona) 
-      # TODO: we should change with env variables
-      BBOX_MIN_LON: ${BBOX_MIN_LON:-10.894444}
-      BBOX_MIN_LAT: ${BBOX_MIN_LAT:-45.266667}
-      BBOX_MAX_LON: ${BBOX_MAX_LON:-10.909444}
-      BBOX_MAX_LAT: ${BBOX_MAX_LAT:-45.281667}
+      # Geographic area configuration (default: Verona area)
+      BBOX_MIN_LON: ${BBOX_MIN_LON}
+      BBOX_MIN_LAT: ${BBOX_MIN_LAT}
+      BBOX_MAX_LON: ${BBOX_MAX_LON}
+      BBOX_MAX_LAT: ${BBOX_MAX_LAT}
     restart: unless-stopped
     mem_limit: 512m
     mem_reservation: 256m

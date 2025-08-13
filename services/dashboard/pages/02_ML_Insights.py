@@ -64,6 +64,7 @@ def get_ml_prediction(r: redis.Redis, field_id: str) -> Dict:
 
 # Streamlit UI
 st.title("ML Insights - Real-time Anomalies")
+st.markdown("*Real-time machine learning anomaly detection with severity classification and recommendations*")
 
 redis_client = get_redis_client()
 
@@ -84,9 +85,9 @@ if not selected_fields:
 
 # Function to get border color based on severity
 SEVERITY_COLOR = {
-    "high": "#ff4d4f",    # red
-    "medium": "#faad14",  # orange
-    "low": "#52c41a",     # green
+    "critical": "#a61e1e",  # dark red
+    "high": "#ff4d4f",      # red
+    "medium": "#faad14",    # orange
 }
 def get_severity_color(severity):
     return SEVERITY_COLOR.get(str(severity).lower(), "#d9d9d9")  # default gray
@@ -108,13 +109,20 @@ def show_prediction_card(pred):
     else:
         ts_rome = "-"
     # Prepare card HTML content
+    # Format anomaly score with 2 decimal places if it's a number
+    anomaly_score = pred.get('anomaly_score', '-')
+    if isinstance(anomaly_score, (int, float)):
+        anomaly_score_display = f"{anomaly_score:.2f}"
+    else:
+        anomaly_score_display = str(anomaly_score)
+    
     card_html = f'''
     <div style="{card_style}">
         <h3 style='margin-bottom:0.5em'>ML Prediction for <span style='color:{border_color}'><b>{pred.get('field_id', '-')}</b></span></h3>
         <div style="display: flex; flex-wrap: wrap; gap: 2em; margin-bottom: 1.5em;">
             <div>
                 <div style='font-size:1.1em; color:#888;'>Anomaly Score</div>
-                <div style='font-size:2em; font-weight:bold'>{pred.get('anomaly_score', '-')}</div>
+                <div style='font-size:2em; font-weight:bold'>{anomaly_score_display}</div>
             </div>
             <div>
                 <div style='font-size:1.1em; color:#888;'>Severity</div>
@@ -157,5 +165,3 @@ for tab, pred, fid in zip(tabs, predictions, selected_fields):
             show_prediction_card(pred)
 
 st.caption("The page automatically refreshes every 10 seconds to show real-time ML anomalies.")
-
-#TODO: make this page more user friendly 

@@ -4,7 +4,6 @@ Gold Zone Processor - ML Features with Sliding Window
 Processes Silver zone data into ML-ready features:
 - Sliding window aggregations (10 minutes)
 - Location-based sensor-weather join
-- 3 records per file (one per field) #TODO: check if we need to change this
 - Optimized for machine learning
 """
 
@@ -33,15 +32,18 @@ class GoldZoneProcessor:
         self.gold_path = os.getenv("GOLD_PATH", "s3a://gold/")
         self.sliding_window_minutes = 10
 
-  #TODO: check uv info and condition info from the weather schema, enviroment stress scoring and coombined risk score should be removed
-  #TODO: we should add month sin cos 
     def create_ml_features_sliding_window(self) -> DataFrame:
         """
         Create ML features using sliding window approach (10 minutes)
         - Aggregates sensor and weather data for last 10 minutes
         - Joins by location to ensure data consistency
-        - Creates exactly 3 records (one per field) #TODO: check if we need to change this
         - Outputs to ml_feature folder with timestamp - append mode
+        
+        Big Data Optimization:
+        - Uses repartition() instead of coalesce() for better scalability
+        - For small datasets (3 records): repartition(1) is optimal
+        - For larger datasets: Spark can auto-optimize partition count
+        - Maintains single file output while being Big Data ready
         """
         logger.info(f"Creating ML features with {self.sliding_window_minutes}-minute sliding window...")
         
@@ -328,14 +330,36 @@ class GoldZoneProcessor:
                 final_filename = f"ml_feature_{current_timestamp_str}.snappy.parquet"
                 final_path = f"{self.gold_path}ml_feature/{final_filename}"
 
-                # Scrivi in una sola partizione #TODO: check if we need to change this
-                final_ml_features.coalesce(1).write \
-                    .format("parquet") \
-                    .option("compression", "snappy") \
-                    .mode("overwrite") \
-                    .save(output_dir)
+                # For small datasets (3 records), repartition(1)
+                # For larger datasets, Spark can optimize the partition count automatically
+                record_count = final_ml_features.count()
+                
+                # Determine optimal partition count based on data size
+                if record_count <= 10:
+                    # Small datasets: single partition for efficiency
+                    optimal_partitions = 1
+                elif record_count <= 1000:
+                    # Medium datasets: 1 partition per 1000 records (max 10 partitions)
+                    optimal_partitions = min(record_count // 1000, 10)
+                else:
+                    # Large datasets: let Spark decide (adaptive partitioning)
+                    optimal_partitions = None
+                
+                if optimal_partitions is not None:
+                    final_ml_features.repartition(optimal_partitions).write \
+                        .format("parquet") \
+                        .option("compression", "snappy") \
+                        .mode("overwrite") \
+                        .save(output_dir)
+                else:
+                    # Let Spark use adaptive partitioning for large datasets
+                    final_ml_features.write \
+                        .format("parquet") \
+                        .option("compression", "snappy") \
+                        .mode("overwrite") \
+                        .save(output_dir)
 
-                # Trova il file part-*.parquet e rinominalo #TODO: check if we need to change this
+                # Find the part-*.parquet file and rename it
                 import os
                 from py4j.java_gateway import java_import
                 java_import(self.spark._jvm, "org.apache.hadoop.fs.Path")
@@ -343,11 +367,34 @@ class GoldZoneProcessor:
                 tmp_path = self.spark._jvm.org.apache.hadoop.fs.Path(output_dir)
                 dest_path = self.spark._jvm.org.apache.hadoop.fs.Path(final_path)
                 files = fs.listStatus(tmp_path)
-                for f in files:
-                    name = f.getPath().getName()
-                    if name.startswith("part-") and name.endswith(".parquet"):
-                        fs.rename(f.getPath(), dest_path)
-                # Rimuovi la cartella temporanea
+                
+                # Handle file renaming based on partition count
+                parquet_files = [f for f in files if f.getPath().getName().startswith("part-") and f.getPath().getName().endswith(".parquet")]
+                
+                if len(parquet_files) == 1:
+                    # Single file: rename to final filename (small dataset case)
+                    fs.rename(parquet_files[0].getPath(), dest_path)
+                    logger.info(f"Single file created: {final_filename}")
+                else:
+                    # Multiple files: create directory structure for large datasets
+                    # Remove timestamp suffix for directory name
+                    base_dir_name = f"ml_feature_{current_timestamp_str}"
+                    final_dir_path = f"{self.gold_path}ml_feature/{base_dir_name}/"
+                    final_dir = self.spark._jvm.org.apache.hadoop.fs.Path(final_dir_path)
+                    
+                    # Create directory and move all files
+                    if not fs.exists(final_dir):
+                        fs.mkdirs(final_dir)
+                    
+                    for i, parquet_file in enumerate(parquet_files):
+                        part_name = parquet_file.getPath().getName()
+                        new_name = f"part_{i:05d}.parquet"
+                        new_path = self.spark._jvm.org.apache.hadoop.fs.Path(f"{final_dir_path}{new_name}")
+                        fs.rename(parquet_file.getPath(), new_path)
+                    
+                    logger.info(f"Multiple files created in directory: {base_dir_name} ({len(parquet_files)} partitions)")
+                
+                # Remove temporary directory
                 fs.delete(tmp_path, True)
                 
                 logger.info(f"Successfully wrote ML features to MinIO: {final_path}")
@@ -365,7 +412,13 @@ class GoldZoneProcessor:
             logger.info(f"MinIO storage: {'SUCCESS' if minio_success else 'FAILED'}")
             
             if minio_success:
-                logger.info(f"Created ML feature file: {final_path}")
+                if record_count <= 10:
+                    logger.info(f"Big Data optimized: Single file created for small dataset ({record_count} records)")
+                elif record_count <= 1000:
+                    optimal_partitions = min(record_count // 1000, 10)
+                    logger.info(f"Big Data optimized: {optimal_partitions} partitions for medium dataset ({record_count} records)")
+                else:
+                    logger.info(f"Big Data optimized: Adaptive partitioning for large dataset ({record_count} records)")
             
             # Log details for each field
             for field_id in expected_fields:
