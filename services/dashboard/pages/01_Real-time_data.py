@@ -90,7 +90,7 @@ with st.sidebar:
         # Single location selection with radio button
         selected_location = st.radio(
             "Select a location:",
-            ["Verona", "Milan", "Rome", "Naples", "Palermo"],
+            ["Verona", "Milan (No data)", "Rome (No data)"],
             index=0,  # Default to Verona
             key="weather_location"
         )

@@ -64,6 +64,7 @@ def get_ml_prediction(r: redis.Redis, field_id: str) -> Dict:
 
 # Streamlit UI
 st.title("ML Insights - Real-time Anomalies")
+st.markdown("*Real-time machine learning anomaly detection with severity classification and recommendations*")
 
 redis_client = get_redis_client()
 

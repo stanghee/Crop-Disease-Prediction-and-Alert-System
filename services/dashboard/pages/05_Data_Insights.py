@@ -298,6 +298,7 @@ def create_feature_statistics_table(predictions_df: pd.DataFrame) -> pd.DataFram
 
 # Main UI
 st.title("Data Insights - Historical Analysis")
+st.markdown("*Historical analysis of ML predictions and alerts with statistical insights and data visualization*")
 st.markdown("---")
 
 # Sidebar controls
