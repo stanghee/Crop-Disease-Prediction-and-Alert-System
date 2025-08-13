@@ -15,7 +15,6 @@ The Weather Service operates as a critical data source collecting real-time mete
 ## Key Features
 
 - **Real-time Monitoring**: Fetches current weather from WeatherAPI.com every 60 seconds
-- **Robust Error Handling**: Comprehensive retry logic and graceful error recovery #TODO: da speiugare meglio non appena avremo la logica implementata
 - **Configurable Location**: Environment-based configuration for different agricultural regions
 - **Timezone Awareness**: Proper timestamp handling for accurate temporal analysis
 

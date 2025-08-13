@@ -158,5 +158,3 @@ for tab, pred, fid in zip(tabs, predictions, selected_fields):
             show_prediction_card(pred)
 
 st.caption("The page automatically refreshes every 10 seconds to show real-time ML anomalies.")
-
-#TODO: make this page more user friendly 

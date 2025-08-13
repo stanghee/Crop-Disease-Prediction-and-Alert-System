@@ -4,7 +4,6 @@ Streaming Inference - Real-time anomaly detection
 Reads from Kafka gold-ml-features topic and predicts anomalies
 """
 
-#TODO: change the threshold for sensor_anomaly_rate (now is 0.3)
 
 import logging
 import json
@@ -158,7 +157,7 @@ class StreamingPredictor:
                 when(abs(col("humidity_differential")) > 20, "High humidity differential: check irrigation uniformity"),
                 
                 # High anomaly rate in sensor data
-                when(col("sensor_anomaly_rate") > 0.3, "High sensor anomaly rate: verify sensor calibration and maintenance"),
+                when(col("sensor_anomaly_rate") > 0.1, "High sensor anomaly rate: verify sensor calibration and maintenance"),
                 
                 # Critical environmental combinations
                 when((col("sensor_avg_temperature") > 25) & (col("sensor_avg_humidity") > 80), "High temp + humidity: Ideal pathogen conditions - apply preventive measures"),

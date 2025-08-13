@@ -155,7 +155,7 @@ class MLAnomalyService:
                 "timestamp": datetime.now().isoformat()
             }
         
-        # TODO: check if this is needed
+        # Used for testing 
         @self.app.post("/train")
         async def trigger_training(background_tasks: BackgroundTasks, days: int = 30):
             """Manually trigger model training"""
@@ -165,7 +165,7 @@ class MLAnomalyService:
                 "days_of_data": days,
                 "timestamp": datetime.now().isoformat()
             }
-        #TODO: It could be deleted now that we have the training after 4 minutes
+        # Used for testing 
         @self.app.post("/train/immediate")
         async def immediate_training():
             """Immediate training with available data"""
@@ -304,7 +304,6 @@ class MLAnomalyService:
                     query.stop()
             self.streaming_queries = []
     
-    #TODO: It is necessary, it could be good to mantain but then we need to explain why
     def start_scheduled_training(self):
         """Start scheduled training job"""
         # Schedule weekly training on Sunday at 2 AM

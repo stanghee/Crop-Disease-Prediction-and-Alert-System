@@ -18,7 +18,7 @@ Our team developed this service to create the foundational data infrastructure t
 - **Output**: JSON format in `s3a://bronze/iot/` with 30-second micro-batches
 
 **Weather Data Stream**:
-- **Schema**: 12 fields from WeatherAPI.com (`temp_c`, `humidity`, `wind_kph`, `condition`, `uv`, `coordinates`...) #TODO: fix this part 
+- **Schema**: 13 fields from WeatherAPI.com (`temp_c`, `humidity`, `wind_kph`, `condition`, `uv`, `precip_mm`, `location`, `message_id`, `timestamp`, `region`, `country`, `lat`, `lon`) 
 - **Kafka Topic**: `weather_data` 
 - **Temporal Partitioning**: `year/month/day/hour` structure
 - **Output**: JSON format in `s3a://bronze/weather/` with 30-second micro-batches
@@ -84,7 +84,7 @@ Our team developed this service to create the foundational data infrastructure t
 - **Temperature**: Average, standard deviation, min/max, range for Verona area
 - **Humidity**: Average, standard deviation, min/max, range for Verona area
 - **Wind Speed**: Average, standard deviation, min/max, range for Verona area
-- **UV Index**: Average, standard deviation, min/max, range for Verona area #TODO: check this
+- **UV Index**: Average, standard deviation, min/max, range for Verona area
 - **Conditions**: Dominant weather condition (mode) for the time window
 
 **Advanced Feature Engineering**:
@@ -109,10 +109,6 @@ Our team developed this service to create the foundational data infrastructure t
 - **Silver Zone**: Continuous streaming with dependency management (1-minute micro-batches)
 - **Gold Zone**: Scheduled processing every 10 minutes with sliding window
 
-**Error Handling & Resilience**: #TODO: fix it
-- **Graceful Degradation**: Continues processing even if individual components fail
-- **Checkpoint Management**: Separate checkpoints for each zone and stream
-- **Data Freshness Monitoring**: Tracks data staleness for quality assessment
 
 ## Technical Architecture
 

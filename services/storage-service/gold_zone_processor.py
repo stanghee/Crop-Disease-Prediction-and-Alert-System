@@ -32,14 +32,11 @@ class GoldZoneProcessor:
         self.gold_path = os.getenv("GOLD_PATH", "s3a://gold/")
         self.sliding_window_minutes = 10
 
-  #TODO: check uv info and condition info from the weather schema, enviroment stress scoring and coombined risk score should be removed
-  #TODO: we should add month sin cos 
     def create_ml_features_sliding_window(self) -> DataFrame:
         """
         Create ML features using sliding window approach (10 minutes)
         - Aggregates sensor and weather data for last 10 minutes
         - Joins by location to ensure data consistency
-        - Creates exactly 3 records (one per field) #TODO: check if we need to change this
         - Outputs to ml_feature folder with timestamp - append mode
         
         Big Data Optimization:
