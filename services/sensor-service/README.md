@@ -35,6 +35,8 @@ The service produces sensor data with the following schema:
   "field_id": "string",
   "location": "string",
   "temperature": "double",
+  "latitude": "double",
+  "longitude": "double",
   "humidity": "double",
   "soil_ph": "double"
 }
