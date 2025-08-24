@@ -41,6 +41,3 @@ The service produces weather data with the following schema:
   "condition": "string",
   "uv": "double"
 }
-
-
-
