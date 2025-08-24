@@ -392,8 +392,6 @@ In a real-world deployment, scaling to larger areas or higher data volumes requi
 
 ### Potential Improvements
 
-#TODO: ricontrolla bene
-
 Several improvements could address current limitations for a more robust implementation:
 
 * **Real Sensor Integration**: Connect to actual agricultural IoT devices and sensor networks.
@@ -492,5 +490,3 @@ The system's ability to integrate multiple data sources, perform real-time analy
 - [Kaloxylos, A., Eigenmann, R., Teye, F., Politopoulou, Z., Wolfert, J., Shrank, C., Dillinger, M., Lampropoulou, I., Antoniou, E., Pesonen, L., Nicole, H., Thomas, F., Alonistioti, N., & Kormentzas, G. (2016). Farm management systems and the future Internet era. Computers and Electronics in Agriculture, 89, 130–144.](https://doi.org/10.1016/j.compag.2012.09.002)
 
 - [Chergui, N., & Kechadi, M. T. (2022). Data analytics for crop management: a big data view. Journal of Big Data, 9(123).](https://doi.org/10.1186/s40537-022-00668-2)
-
-#TODO: ricontrollare bene la chat general discord se ci sono reference 
